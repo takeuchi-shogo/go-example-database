@@ -36,7 +36,7 @@ func TestNewPage(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// NewPage を呼び出し
-			page := NewPage(tc.pageID)
+			page := NewPage(tc.pageID, make([]byte, pageSize))
 
 			// ID が正しく設定されているか確認
 			if page.id != tc.expected {
@@ -92,7 +92,7 @@ func TestGetOffset(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Page を作成
-			page := NewPage(tc.pageID)
+			page := NewPage(tc.pageID, make([]byte, pageSize))
 
 			// GetOffset を呼び出し
 			offset := page.GetOffset()

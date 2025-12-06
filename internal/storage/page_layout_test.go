@@ -320,6 +320,14 @@ func TestData(t *testing.T) {
 	if len(data) != pageSize {
 		t.Errorf("Data() length = %d, want %d", len(data), pageSize)
 	}
+
+	// ヘッダーが正しく初期化されているか確認（data の値を使用）
+	// freeSpaceEnd は pageSize (4096) で初期化されているはず
+	// リトルエンディアンで格納: data[4:6]
+	freeSpaceEnd := uint16(data[4]) | uint16(data[5])<<8
+	if freeSpaceEnd != pageSize {
+		t.Errorf("Data() freeSpaceEnd = %d, want %d", freeSpaceEnd, pageSize)
+	}
 }
 
 func TestRowCount(t *testing.T) {

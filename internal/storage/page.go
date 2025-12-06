@@ -10,10 +10,10 @@ type Page struct {
 }
 
 // NewPage creates a new Page with the given ID.
-func NewPage(id PageID) *Page {
+func NewPage(id PageID, data []byte) *Page {
 	return &Page{
 		id:   id,
-		data: make([]byte, pageSize),
+		data: data,
 	}
 }
 

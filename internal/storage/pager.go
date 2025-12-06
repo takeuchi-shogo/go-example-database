@@ -33,8 +33,8 @@ func NewPager(filename string) (*Pager, error) {
 }
 
 // ReadPage reads the Page with the given ID from the file.
-func (p *Pager) ReadPage(id PageID) (*Page, error) {
-	page := NewPage(id)
+func (p *Pager) ReadPage(id PageID, data []byte) (*Page, error) {
+	page := NewPage(id, data)
 
 	offset := page.GetOffset()
 
@@ -61,4 +61,8 @@ func (p *Pager) WritePage(page *Page) error {
 // Close closes the Pager and the underlying file.
 func (p *Pager) Close() error {
 	return p.file.Close()
+}
+
+func (p *Pager) GetNumPages() uint32 {
+	return p.numPages
 }

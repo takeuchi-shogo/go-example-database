@@ -98,7 +98,7 @@ func TestReadPage(t *testing.T) {
 	defer pager.Close()
 
 	// テストデータを作成して書き込み
-	page := NewPage(0)
+	page := NewPage(0, make([]byte, pageSize))
 	testData := []byte("Hello, Database!")
 	copy(page.data, testData)
 	if err := pager.WritePage(page); err != nil {
@@ -106,7 +106,7 @@ func TestReadPage(t *testing.T) {
 	}
 
 	// ReadPage を呼び出し
-	readPage, err := pager.ReadPage(0)
+	readPage, err := pager.ReadPage(0, make([]byte, pageSize))
 	if err != nil {
 		t.Fatalf("ReadPage(0) failed: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestReadPageFromEmptyFile(t *testing.T) {
 	defer pager.Close()
 
 	// 空のファイルからページを読み込もうとするとエラーになるはず
-	_, err = pager.ReadPage(0)
+	_, err = pager.ReadPage(0, make([]byte, pageSize))
 	if err == nil {
 		t.Error("ReadPage from empty file should return an error, but got nil")
 	}
@@ -157,7 +157,7 @@ func TestWritePage(t *testing.T) {
 	defer pager.Close()
 
 	// テストデータを作成
-	page := NewPage(0)
+	page := NewPage(0, make([]byte, pageSize))
 	testData := []byte("Test data for WritePage")
 	copy(page.data, testData)
 
@@ -196,7 +196,7 @@ func TestWriteAndReadMultiplePages(t *testing.T) {
 	testDataList := make([][]byte, numPages)
 
 	for i := 0; i < numPages; i++ {
-		page := NewPage(PageID(i))
+		page := NewPage(PageID(i), make([]byte, pageSize))
 		// 各ページに異なるデータを設定
 		testData := make([]byte, 100)
 		for j := 0; j < 100; j++ {
@@ -213,7 +213,7 @@ func TestWriteAndReadMultiplePages(t *testing.T) {
 
 	// 各ページを読み込んで検証
 	for i := 0; i < numPages; i++ {
-		readPage, err := pager.ReadPage(PageID(i))
+		readPage, err := pager.ReadPage(PageID(i), make([]byte, pageSize))
 		if err != nil {
 			t.Fatalf("ReadPage(%d) failed: %v", i, err)
 		}
@@ -246,7 +246,7 @@ func TestPageDataIntegrity(t *testing.T) {
 	defer pager.Close()
 
 	// 同じページに複数回書き込む
-	page := NewPage(0)
+	page := NewPage(0, make([]byte, pageSize))
 
 	// 最初のデータを書き込み
 	firstData := []byte("First write")
@@ -265,7 +265,7 @@ func TestPageDataIntegrity(t *testing.T) {
 	}
 
 	// 読み込んで2回目のデータが正しく保存されているか確認
-	readPage, err := pager.ReadPage(0)
+	readPage, err := pager.ReadPage(0, make([]byte, pageSize))
 	if err != nil {
 		t.Fatalf("ReadPage(0) failed: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestPagerClose(t *testing.T) {
 	}
 
 	// 閉じた後に書き込みを試みるとエラーになることを確認
-	page := NewPage(0)
+	page := NewPage(0, make([]byte, pageSize))
 	err = pager.WritePage(page)
 	if err == nil {
 		t.Error("WritePage after Close() should return an error, but got nil")
