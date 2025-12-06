@@ -32,3 +32,7 @@
 
 - ファイル構成などアーキテクチャについては、[docs/agent/service-architecture.md](docs/agent/service-architecture.md) を参照してください。
 - テストについては、[docs/agent/running-tests.md](docs/agent/running-tests.md) を参照してください。
+
+## 実装フェーズについて
+
+現在の実装フェーズは、[docs/plans/database-impliment-plan.md](docs/plans/database-impliment-plan.md) を参照してください。
