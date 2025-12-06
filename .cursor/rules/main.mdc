@@ -1,0 +1,9 @@
+---
+name: "main"
+description: "Enforce `CLAUDE.md` across the session"
+globs:
+  - "*"
+alwaysApply: true
+---
+
+- "CLAUDE.md" に記載されている内容を参照し、従ってください。

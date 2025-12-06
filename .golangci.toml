@@ -1,0 +1,11 @@
+version = '2'
+
+[run]
+allow-parallel-tests = true
+
+[issues]
+max-issues-per-linter = 0
+max-same-issues = 0
+
+[linters]
+default = 'all'

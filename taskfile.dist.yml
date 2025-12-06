@@ -1,0 +1,12 @@
+version: '3'
+
+includes:
+  setup: taskfile.setup.yml
+
+tasks:
+  build:
+    cmds:
+      - go build -o bin/cli cmd/cli/main.go
+  test:
+    cmds:
+      - go test ./...
