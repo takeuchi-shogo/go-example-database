@@ -627,12 +627,79 @@ wal.LogCommit(txnID)
 
 - [x] Step 1: plan_node.go
 - [x] Step 2: result.go
-- [x] Step 3: catalog.go
+- [x] Step 3: catalog.go（独立パッケージとして分離）
 - [x] Step 4: iterator.go
 - [x] Step 5: planner.go
-- [ ] Step 6: executor.go
+- [x] Step 6: executor.go
 - [ ] Step 7: REPL 統合
+- [ ] Step 8: join.go
+- [ ] Step 9: aggregate.go
+- [ ] Step 10: cost.go
+- [ ] Step 11: optimizer.go
+
+## 完了した実装
+
+### Parser の変更
+
+AST 型をパブリックに変更し、外部パッケージからアクセス可能に:
+
+- `SelectStatement`, `InsertStatement`, `UpdateStatement`, `DeleteStatement`
+- `CreateTableStatement`, `ExplainStatement`
+- `Identifier`, `StringLiteral`, `IntegerLiteral`, `BooleanLiteral`
+- `BinaryExpression`, `Asterisk`, `ColumnDefinition`, `OrderByClause`
+
+### Storage の変更
+
+`Table.Scan()` メソッドを追加:
+
+```go
+func (t *Table) Scan() ([]*Row, error)
+```
+
+テーブル内の全行をスキャンして返す。
+
+### Catalog パッケージの分離
+
+循環参照を解消するため、`internal/catalog/` として独立パッケージに:
+
+```go
+type Catalog interface {
+    CreateTable(name string, schema *storage.Schema) error
+    GetTable(name string) (*storage.Table, error)
+    DropTable(name string) error
+    TableExists(name string) bool
+    ListTables() []*storage.Table
+    GetSchema(name string) (*storage.Schema, error)
+    Close() error
+}
+```
+
+### Executor の実装
+
+以下の PlanNode を実行可能:
+
+| Node | 機能 |
+|------|------|
+| ScanNode | テーブル全スキャン |
+| FilterNode | WHERE 条件でフィルタリング |
+| ProjectNode | SELECT カラム選択 |
+| InsertNode | INSERT 文実行 |
+| CreateTableNode | CREATE TABLE 文実行 |
+| UpdateNode | (未実装) |
+| DeleteNode | (未実装) |
+
+### テスト
+
+各パッケージに包括的なテストを追加:
+
+- `internal/catalog/catalog_test.go` - 9 tests
+- `internal/planner/planner_test.go` - 7 tests
+- `internal/planner/plan_node_test.go` - 11 tests
+- `internal/executor/executor_test.go` - 10 tests
+- `internal/executor/result_test.go` - 11 tests
 
 ## 次のステップ
 
-Step 6 の executor.go の実装を開始する。
+Step 7: Session パターンを使った REPL 統合を実装する。
+
+参考: TiDB の [session パッケージ](https://github.com/pingcap/tidb/tree/master/pkg/session)
