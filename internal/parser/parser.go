@@ -75,8 +75,8 @@ func (p *parser) Parse() (Statement, error) {
 	}
 }
 
-func (p *parser) parseSelectStatement() (*selectStatement, error) {
-	stmt := &selectStatement{}
+func (p *parser) parseSelectStatement() (*SelectStatement, error) {
+	stmt := &SelectStatement{}
 	// SELECT の次へ進む
 	p.nextToken()
 	// カラムリストをパース
@@ -84,7 +84,7 @@ func (p *parser) parseSelectStatement() (*selectStatement, error) {
 	if err != nil {
 		return nil, err
 	}
-	stmt.columns = columns
+	stmt.Columns = columns
 	// FROM を期待
 	if !p.expectPeek(TOKEN_FROM) {
 		return nil, fmt.Errorf("expected FROM token")
@@ -93,12 +93,12 @@ func (p *parser) parseSelectStatement() (*selectStatement, error) {
 	if !p.expectPeek(TOKEN_IDENT) {
 		return nil, fmt.Errorf("expected table name")
 	}
-	stmt.from = p.currentToken.literal
+	stmt.From = p.currentToken.literal
 	// Where句をパース
 	if p.peekTokenIs(TOKEN_WHERE) {
 		p.nextToken() // WHERE へ
 		p.nextToken() // 条件式へ
-		stmt.where, err = p.parseExpression()
+		stmt.Where, err = p.parseExpression()
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +109,7 @@ func (p *parser) parseSelectStatement() (*selectStatement, error) {
 		if !p.expectPeek(TOKEN_BY) {
 			return nil, fmt.Errorf("expected BY after ORDER")
 		}
-		stmt.orderBy, err = p.parseOrderBy()
+		stmt.OrderBy, err = p.parseOrderBy()
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +120,7 @@ func (p *parser) parseSelectStatement() (*selectStatement, error) {
 		p.nextToken()
 		p.nextToken()
 		limit, _ := strconv.Atoi(p.currentToken.literal)
-		stmt.limit = &limit
+		stmt.Limit = &limit
 	}
 	return stmt, nil
 }
@@ -130,14 +130,14 @@ func (p *parser) parseSelectColumns() ([]Expression, error) {
 	// カラムリストをパース
 	// * の場合は全カラムを選択
 	if p.currentTokenIs(TOKEN_ASTERISK) {
-		return []Expression{&asterisk{}}, nil
+		return []Expression{&Asterisk{}}, nil
 	}
 	// カラム名のリスト
 	for {
 		if !p.currentTokenIs(TOKEN_IDENT) {
 			return nil, fmt.Errorf("expected column name")
 		}
-		columns = append(columns, &identifier{value: p.currentToken.literal})
+		columns = append(columns, &Identifier{Value: p.currentToken.literal})
 		if !p.peekTokenIs(TOKEN_COMMA) {
 			break
 		}
@@ -162,7 +162,7 @@ func (p *parser) parseExpression() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &binaryExpression{left: left, operator: operator, right: right}
+		left = &BinaryExpression{Left: left, Operator: operator, Right: right}
 	}
 	return left, nil
 }
@@ -172,7 +172,7 @@ func (p *parser) parseComparisonExpression() (Expression, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 比較演算子があれば binaryExpression を作成
+	// 比較演算子があれば BinaryExpression を作成
 	if p.peekTokenIs(TOKEN_EQ) || p.peekTokenIs(TOKEN_NEQ) ||
 		p.peekTokenIs(TOKEN_LT) || p.peekTokenIs(TOKEN_GT) ||
 		p.peekTokenIs(TOKEN_LTE) || p.peekTokenIs(TOKEN_GTE) {
@@ -184,7 +184,7 @@ func (p *parser) parseComparisonExpression() (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &binaryExpression{left: left, operator: operator, right: right}
+		left = &BinaryExpression{Left: left, Operator: operator, Right: right}
 	}
 	return left, nil
 }
@@ -192,23 +192,23 @@ func (p *parser) parseComparisonExpression() (Expression, error) {
 func (p *parser) parsePrimaryExpression() (Expression, error) {
 	switch p.currentToken.tokenType {
 	case TOKEN_IDENT:
-		return &identifier{value: p.currentToken.literal}, nil
+		return &Identifier{Value: p.currentToken.literal}, nil
 	case TOKEN_INT:
 		val, _ := strconv.ParseInt(p.currentToken.literal, 10, 64)
-		return &integerLiteral{value: int(val)}, nil
+		return &IntegerLiteral{Value: int(val)}, nil
 	case TOKEN_VARCHAR:
-		return &stringLiteral{value: p.currentToken.literal}, nil
+		return &StringLiteral{Value: p.currentToken.literal}, nil
 	case TOKEN_TEXT:
-		return &stringLiteral{value: p.currentToken.literal}, nil
+		return &StringLiteral{Value: p.currentToken.literal}, nil
 	case TOKEN_BOOL:
-		return &booleanLiteral{value: p.currentToken.literal == "true"}, nil
+		return &BooleanLiteral{Value: p.currentToken.literal == "true"}, nil
 	default:
 		return nil, fmt.Errorf("unexpected token: %d", p.currentToken.tokenType)
 	}
 }
 
-func (p *parser) parseInsertStatement() (*insertStatement, error) {
-	stmt := &insertStatement{}
+func (p *parser) parseInsertStatement() (*InsertStatement, error) {
+	stmt := &InsertStatement{}
 	// INTO を期待
 	if !p.expectPeek(TOKEN_INTO) {
 		return nil, fmt.Errorf("expected INTO token")
@@ -217,13 +217,13 @@ func (p *parser) parseInsertStatement() (*insertStatement, error) {
 	if !p.expectPeek(TOKEN_IDENT) {
 		return nil, fmt.Errorf("expected table name")
 	}
-	stmt.tableName = p.currentToken.literal
+	stmt.TableName = p.currentToken.literal
 	// ()を期待
 	if !p.expectPeek(TOKEN_LPAREN) {
 		return nil, fmt.Errorf("expected ( after table name")
 	}
 	// カラムリストをパース
-	stmt.columns = p.parseIdentifierList()
+	stmt.Columns = p.parseIdentifierList()
 	// )を期待
 	if !p.expectPeek(TOKEN_RPAREN) {
 		return nil, fmt.Errorf("expected ) after columns")
@@ -237,7 +237,7 @@ func (p *parser) parseInsertStatement() (*insertStatement, error) {
 		return nil, fmt.Errorf("expected ( after VALUES")
 	}
 	// 値のリストをパース
-	stmt.values = p.parseExpressionList()
+	stmt.Values = p.parseExpressionList()
 	if !p.expectPeek(TOKEN_RPAREN) {
 		return nil, fmt.Errorf("expected ) after values")
 	}
@@ -279,20 +279,20 @@ func (p *parser) parseExpressionList() []Expression {
 	return list
 }
 
-func (p *parser) parseOrderBy() ([]orderByClause, error) {
-	clauses := []orderByClause{}
+func (p *parser) parseOrderBy() ([]OrderByClause, error) {
+	clauses := []OrderByClause{}
 	for {
 		p.nextToken() // カラム名へ
 		if !p.currentTokenIs(TOKEN_IDENT) {
 			return nil, fmt.Errorf("expected column name")
 		}
-		clause := orderByClause{column: p.currentToken.literal, asc: true}
+		clause := OrderByClause{Column: p.currentToken.literal, Asc: true}
 		if p.peekTokenIs(TOKEN_DESC) {
 			p.nextToken() // DESC へ
-			clause.asc = false
+			clause.Asc = false
 		} else if p.peekTokenIs(TOKEN_ASC) {
 			p.nextToken() // ASC へ
-			clause.asc = true
+			clause.Asc = true
 		}
 		clauses = append(clauses, clause)
 		if !p.peekTokenIs(TOKEN_COMMA) {
@@ -303,15 +303,15 @@ func (p *parser) parseOrderBy() ([]orderByClause, error) {
 	return clauses, nil
 }
 
-func (p *parser) parseUpdateStatement() (*updateStatement, error) {
-	stmt := &updateStatement{
-		setExpressions: make(map[string]Expression),
+func (p *parser) parseUpdateStatement() (*UpdateStatement, error) {
+	stmt := &UpdateStatement{
+		SetExpressions: make(map[string]Expression),
 	}
 	// テーブル名を期待
 	if !p.expectPeek(TOKEN_IDENT) {
 		return nil, fmt.Errorf("expected table name")
 	}
-	stmt.tableName = p.currentToken.literal
+	stmt.TableName = p.currentToken.literal
 	// SET を期待
 	if !p.expectPeek(TOKEN_SET) {
 		return nil, fmt.Errorf("expected SET token")
@@ -335,7 +335,7 @@ func (p *parser) parseUpdateStatement() (*updateStatement, error) {
 		if err != nil {
 			return nil, err
 		}
-		stmt.setExpressions[columnName] = value
+		stmt.SetExpressions[columnName] = value
 		// 次が , でなければ終了
 		if !p.peekTokenIs(TOKEN_COMMA) {
 			break
@@ -350,14 +350,14 @@ func (p *parser) parseUpdateStatement() (*updateStatement, error) {
 		if err != nil {
 			return nil, err
 		}
-		stmt.where = whereExpr
+		stmt.Where = whereExpr
 	}
 	return stmt, nil
 }
 
 // DELETE文をパース
-func (p *parser) parseDeleteStatement() (*deleteStatement, error) {
-	stmt := &deleteStatement{}
+func (p *parser) parseDeleteStatement() (*DeleteStatement, error) {
+	stmt := &DeleteStatement{}
 	// FROM を期待
 	if !p.expectPeek(TOKEN_FROM) {
 		return nil, fmt.Errorf("expected FROM token")
@@ -366,7 +366,7 @@ func (p *parser) parseDeleteStatement() (*deleteStatement, error) {
 	if !p.expectPeek(TOKEN_IDENT) {
 		return nil, fmt.Errorf("expected table name")
 	}
-	stmt.tableName = p.currentToken.literal
+	stmt.TableName = p.currentToken.literal
 	// WHERE句をパース
 	if p.peekTokenIs(TOKEN_WHERE) {
 		p.nextToken() // WHERE へ
@@ -375,14 +375,14 @@ func (p *parser) parseDeleteStatement() (*deleteStatement, error) {
 		if err != nil {
 			return nil, err
 		}
-		stmt.where = whereExpr
+		stmt.Where = whereExpr
 	}
 	return stmt, nil
 }
 
 // CREATE TABLE 文をパース
-func (p *parser) parseCreateTableStatement() (*createTableStatement, error) {
-	stmt := &createTableStatement{}
+func (p *parser) parseCreateTableStatement() (*CreateTableStatement, error) {
+	stmt := &CreateTableStatement{}
 	// TABLE を期待
 	if !p.expectPeek(TOKEN_TABLE) {
 		return nil, fmt.Errorf("expected TABLE token")
@@ -391,7 +391,7 @@ func (p *parser) parseCreateTableStatement() (*createTableStatement, error) {
 	if !p.expectPeek(TOKEN_IDENT) {
 		return nil, fmt.Errorf("expected table name")
 	}
-	stmt.tableName = p.currentToken.literal
+	stmt.TableName = p.currentToken.literal
 	// ()を期待
 	if !p.expectPeek(TOKEN_LPAREN) {
 		return nil, fmt.Errorf("expected ( after TABLE")
@@ -403,7 +403,7 @@ func (p *parser) parseCreateTableStatement() (*createTableStatement, error) {
 		if err != nil {
 			return nil, err
 		}
-		stmt.columns = append(stmt.columns, *colDef)
+		stmt.Columns = append(stmt.Columns, *colDef)
 		// 次が , でなければ終了
 		if !p.peekTokenIs(TOKEN_COMMA) {
 			break
@@ -418,13 +418,13 @@ func (p *parser) parseCreateTableStatement() (*createTableStatement, error) {
 }
 
 // カラム定義をパース
-func (p *parser) parseColumnDefinition() (*columnDefinition, error) {
-	colDef := &columnDefinition{}
+func (p *parser) parseColumnDefinition() (*ColumnDefinition, error) {
+	colDef := &ColumnDefinition{}
 	// カラム名をパース（呼び出し元で既にnextToken()済み）
 	if !p.currentTokenIs(TOKEN_IDENT) {
 		return nil, fmt.Errorf("expected column name")
 	}
-	colDef.name = p.currentToken.literal
+	colDef.Name = p.currentToken.literal
 	p.nextToken() // データ型へ
 
 	// データ型（INT, VARCHAR等は識別子として認識される）
@@ -434,22 +434,22 @@ func (p *parser) parseColumnDefinition() (*columnDefinition, error) {
 
 	switch strings.ToUpper(p.currentToken.literal) {
 	case "INT", "INTEGER":
-		colDef.columnType = "INT"
+		colDef.ColumnType = "INT"
 	case "FLOAT", "DOUBLE":
-		colDef.columnType = "FLOAT"
+		colDef.ColumnType = "FLOAT"
 	case "VARCHAR":
-		colDef.columnType = "VARCHAR"
+		colDef.ColumnType = "VARCHAR"
 		// VARCHAR(255) のような形式をパース
 		if p.peekTokenIs(TOKEN_LPAREN) {
 			p.nextToken() // ( へ
 			p.nextToken() // サイズへ
-			colDef.columnType = fmt.Sprintf("VARCHAR(%s)", p.currentToken.literal)
+			colDef.ColumnType = fmt.Sprintf("VARCHAR(%s)", p.currentToken.literal)
 			p.nextToken() // ) へ
 		}
 	case "BOOL", "BOOLEAN":
-		colDef.columnType = "BOOL"
+		colDef.ColumnType = "BOOL"
 	case "TEXT":
-		colDef.columnType = "TEXT"
+		colDef.ColumnType = "TEXT"
 	default:
 		return nil, fmt.Errorf("unknown data type: %s", p.currentToken.literal)
 	}
@@ -459,19 +459,19 @@ func (p *parser) parseColumnDefinition() (*columnDefinition, error) {
 		if !p.expectPeek(TOKEN_KEY) {
 			return nil, fmt.Errorf("expected KEY after PRIMARY")
 		}
-		colDef.primaryKey = true
+		colDef.PrimaryKey = true
 	}
 	// NULL かどうか
 	if p.peekTokenIs(TOKEN_NULL) {
 		p.nextToken() // NULL へ
-		colDef.nullable = true
+		colDef.Nullable = true
 	}
 	return colDef, nil
 }
 
 // EXPLAIN文をパース
-func (p *parser) parseExplainStatement() (*explainStatement, error) {
-	stmt := &explainStatement{}
+func (p *parser) parseExplainStatement() (*ExplainStatement, error) {
+	stmt := &ExplainStatement{}
 	// EXPLAIN の次へ進む
 	p.nextToken()
 	// 文をパース
@@ -479,7 +479,7 @@ func (p *parser) parseExplainStatement() (*explainStatement, error) {
 	if err != nil {
 		return nil, err
 	}
-	stmt.statement = innerStmt
+	stmt.Statement = innerStmt
 	return stmt, nil
 }
 

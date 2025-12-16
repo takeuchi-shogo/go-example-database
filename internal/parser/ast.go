@@ -1,7 +1,7 @@
 package parser
 
 // Node は抽象構文木のノードを表す
-type Node interface{}
+type Node any
 
 // Statement は文を表す
 type Statement interface {
@@ -14,87 +14,87 @@ type Expression interface {
 }
 
 // SelectStatement はSELECT文を表す
-type selectStatement struct {
-	columns []Expression    // 選択するカラム
-	from    string          // テーブル名
-	where   Expression      // 条件
-	orderBy []orderByClause // ソート条件
-	limit   *int            // 最大行数
-	offset  *int            // オフセット
+type SelectStatement struct {
+	Columns []Expression   // 選択するカラム
+	From    string         // テーブル名
+	Where   Expression     // 条件
+	OrderBy []OrderByClause // ソート条件
+	Limit   *int           // 最大行数
+	Offset  *int           // オフセット
 }
 
-// orderByClause はソート条件を表す
-type orderByClause struct {
-	column string // ソートするカラム
-	asc    bool   // 昇順か降順か
+// OrderByClause はソート条件を表す
+type OrderByClause struct {
+	Column string // ソートするカラム
+	Asc    bool   // 昇順か降順か
 }
 
-// insertStatement はINSERT文を表す
-type insertStatement struct {
-	tableName string       // テーブル名
-	columns   []string     // 挿入するカラム
-	values    []Expression // 挿入する値
+// InsertStatement はINSERT文を表す
+type InsertStatement struct {
+	TableName string       // テーブル名
+	Columns   []string     // 挿入するカラム
+	Values    []Expression // 挿入する値
 }
 
-// updateStatement はUPDATE文を表す
-type updateStatement struct {
-	tableName      string                // テーブル名
-	setExpressions map[string]Expression // 更新するカラムと値
-	where          Expression            // 条件
+// UpdateStatement はUPDATE文を表す
+type UpdateStatement struct {
+	TableName      string                // テーブル名
+	SetExpressions map[string]Expression // 更新するカラムと値
+	Where          Expression            // 条件
 }
 
-// deleteStatement はDELETE文を表す
-type deleteStatement struct {
-	tableName string     // テーブル名
-	where     Expression // 条件
+// DeleteStatement はDELETE文を表す
+type DeleteStatement struct {
+	TableName string     // テーブル名
+	Where     Expression // 条件
 }
 
-// createTableStatement はCREATE TABLE文を表す
-type createTableStatement struct {
-	tableName string             // テーブル名
-	columns   []columnDefinition // カラム定義
+// CreateTableStatement はCREATE TABLE文を表す
+type CreateTableStatement struct {
+	TableName string             // テーブル名
+	Columns   []ColumnDefinition // カラム定義
 }
 
-// columnDefinition はカラム定義を表す
-type columnDefinition struct {
-	name       string // カラム名
-	columnType string // カラム型
-	primaryKey bool   // 主キーかどうか
-	nullable   bool   // NULLかどうか
+// ColumnDefinition はカラム定義を表す
+type ColumnDefinition struct {
+	Name       string // カラム名
+	ColumnType string // カラム型
+	PrimaryKey bool   // 主キーかどうか
+	Nullable   bool   // NULLかどうか
 }
 
-// explainStatement はEXPLAIN文を表す
-type explainStatement struct {
-	statement Statement // 説明する文
+// ExplainStatement はEXPLAIN文を表す
+type ExplainStatement struct {
+	Statement Statement // 説明する文
 }
 
-// identifier はカラム名やテーブル名
-type identifier struct {
-	value string // 値
+// Identifier はカラム名やテーブル名
+type Identifier struct {
+	Value string // 値
 }
 
-// stringLiteral は文字列リテラルを表す
-type stringLiteral struct {
-	value string // 値
+// StringLiteral は文字列リテラルを表す
+type StringLiteral struct {
+	Value string // 値
 }
 
-// integerLiteral は整数リテラルを表す
-type integerLiteral struct {
-	value int // 値
+// IntegerLiteral は整数リテラルを表す
+type IntegerLiteral struct {
+	Value int // 値
 }
 
-// booleanLiteral は真偽リテラルを表す
-type booleanLiteral struct {
-	value bool // 値
+// BooleanLiteral は真偽リテラルを表す
+type BooleanLiteral struct {
+	Value bool // 値
 }
 
-// binaryExpression は二項演算子を表す
-type binaryExpression struct {
-	left     Expression // 左辺
-	operator string     // 演算子
-	right    Expression // 右辺
+// BinaryExpression は二項演算子を表す
+type BinaryExpression struct {
+	Left     Expression // 左辺
+	Operator string     // 演算子
+	Right    Expression // 右辺
 }
 
-// asterisk は*を表す
-type asterisk struct {
+// Asterisk は*を表す
+type Asterisk struct {
 }

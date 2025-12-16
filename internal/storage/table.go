@@ -85,6 +85,28 @@ func (t *Table) savePage(pageID PageID, slotted *SlottedPage) error {
 	return t.pager.WritePage(NewPage(pageID, data[:]))
 }
 
+func (t *Table) Scan() ([]*Row, error) {
+	var rows []*Row
+	for i := 0; i < int(t.numPages); i++ {
+		page, err := t.getPage(PageID(i))
+		if err != nil {
+			return nil, err
+		}
+		for j := 0; j < int(page.rowCount()); j++ {
+			rowData, err := page.GetRow(uint16(j))
+			if err != nil {
+				return nil, err
+			}
+			row, err := DecodeRow(rowData, t.schema)
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}
+
 // Close はテーブルを閉じる
 func (t *Table) Close() error {
 	return t.pager.Close()
