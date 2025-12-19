@@ -631,7 +631,7 @@ wal.LogCommit(txnID)
 - [x] Step 4: iterator.go
 - [x] Step 5: planner.go
 - [x] Step 6: executor.go
-- [ ] Step 7: REPL 統合
+- [x] Step 7: REPL 統合（Session パターン）
 - [ ] Step 8: join.go
 - [ ] Step 9: aggregate.go
 - [ ] Step 10: cost.go
@@ -698,8 +698,190 @@ type Catalog interface {
 - `internal/executor/executor_test.go` - 10 tests
 - `internal/executor/result_test.go` - 11 tests
 
+### Session パッケージの実装
+
+TiDB の session パッケージを参考に、SQL 実行パイプラインを統合:
+
+```go
+// internal/session/session.go
+type Session interface {
+    Execute(sqlQuery string) (executor.ResultSet, error)
+    Close() error
+}
+
+func (s *session) Execute(sqlQuery string) (executor.ResultSet, error) {
+    // 1. SQL を解析して Statement を作成
+    p := parser.NewParser(parser.NewLexer(sqlQuery))
+    stmt, err := p.Parse()
+    if err != nil {
+        return nil, err
+    }
+    // 2. Statement を PlanNode に変換
+    plan, err := s.planner.Plan(stmt)
+    if err != nil {
+        return nil, err
+    }
+    // 3. PlanNode を実行して結果を返す
+    return s.executor.Execute(plan)
+}
+```
+
+**実行パイプライン:**
+
+```
+SQL文字列
+    ↓
+Lexer (トークン分割)
+    ↓
+Parser (AST 生成)
+    ↓
+Planner (PlanNode 生成)
+    ↓
+Executor (実行)
+    ↓
+ResultSet
+```
+
+### REPL の変更
+
+Session を使った SQL 実行に変更:
+
+```go
+// pkg/repl/repl.go
+type Repl struct {
+    input   io.Reader
+    output  io.Writer
+    session session.Session  // parser.Parser から変更
+}
+
+func (r *Repl) eval(input string) {
+    result, err := r.session.Execute(input)
+    if err != nil {
+        fmt.Fprintln(r.output, "Error:", err)
+        return
+    }
+    fmt.Fprintln(r.output, result.String())
+}
+```
+
+### main.go の変更
+
+コンポーネントの組み立て:
+
+```go
+// cmd/godb/main.go
+func main() {
+    dataDir := "data"
+    catalog, err := catalog.NewCatalog(dataDir)
+    if err != nil {
+        log.Fatalf("Failed to create catalog: %v", err)
+    }
+    executor := executor.NewExecutor(catalog)
+    session := session.NewSession(catalog, executor)
+    defer session.Close()
+    repl := repl.NewRepl(os.Stdin, os.Stdout, session)
+    repl.Run()
+}
+```
+
+## Q&A: スキーマ永続化について
+
+### Q7: データは永続化されているのにスキーマが永続化されないのはなぜ？
+
+**回答:**
+
+#### 永続化の状態
+
+| 何が | 永続化されている？ | どこに |
+|------|------------------|--------|
+| 行データ（INSERT した内容） | ○ | `.db` ファイルにページとして書き込み |
+| スキーマ（カラム名、型） | × | メモリ上の `map` のみ |
+| テーブル名とファイルの対応 | × | メモリ上の `map` のみ |
+
+#### 具体例
+
+**セッション1:**
+```
+godb> CREATE TABLE users (id INT, name VARCHAR(255))
+→ users.db 作成（0バイト）
+→ メモリ: schemas["users"] = {id: INT, name: VARCHAR}
+
+godb> INSERT INTO users VALUES (1, 'alice')
+→ users.db に 4KB のページが書き込まれる
+→ ファイル内容: [ページヘッダ][スロット配列][1, 'alice' のバイト列]
+```
+
+**セッション2（REPL再起動後）:**
+```
+godb> SELECT * FROM users
+→ Error: table not found
+
+なぜ？
+→ NewCatalog() は空の map を作るだけ
+→ users.db ファイルは存在するが、カタログに登録されていない
+→ さらに、ファイルにはスキーマ情報（カラム名、型）が書かれていない
+→ たとえファイルを読んでもどう解釈するかがわからない
+```
+
+#### 図解
+
+```
+[CREATE TABLE]
+  ↓
+catalog.CreateTable()
+  ↓
+storage.NewPager() → ファイル作成（空）
+storage.NewTable() → メモリ上にテーブル作成
+c.tables[name] = table → メモリに登録
+c.schemas[name] = schema → メモリに登録
+  ↓
+（ファイルにはスキーマ情報が書かれない！）
+
+[INSERT]
+  ↓
+table.Insert(row)
+  ↓
+page.InsertRow() → ページにデータ追加
+pager.WritePage() → ファイルにページ書き込み ← ここでデータは永続化される
+
+[REPL再起動]
+  ↓
+NewCatalog() → 空の map
+  ↓
+users.db ファイルは存在するがスキーマがないので読めない
+```
+
+#### Pager の担当範囲
+
+Pager は「ページ単位の読み書き」を担当:
+- ファイルの作成・オープン・クローズ
+- `ReadPage(pageID)` / `WritePage(page)`
+- ページ数の管理
+
+**Pager が担当しないこと:**
+- スキーマ情報の永続化
+- テーブル一覧の管理
+- 起動時のメタデータ復元
+
+#### 解決方法（将来の実装）
+
+1. **システムテーブル方式** - `_schema` テーブルにスキーマ情報を保存
+2. **ファイルヘッダ方式** - 各 `.db` ファイルの先頭にスキーマを保存
+3. **メタデータファイル方式** - `catalog.json` に全テーブル情報を保存
+
+**TiDB の方式:**
+- TiKV に `m_` プレフィックス付きキーでメタデータを保存
+- スキーマ情報をシリアライズして永続化
+
+#### 現在のプロジェクト計画での位置づけ
+
+- Phase 1: Pager は「ページ単位のI/O」まで ← 完了
+- Phase 10: `cluster/metadata.go` でメタデータ管理 ← 将来実装
+
+現在の Phase 5 では、同一セッション内での SQL 実行が動作すれば OK。
+
 ## 次のステップ
 
-Step 7: Session パターンを使った REPL 統合を実装する。
+Step 8 以降: JOIN、集約関数、コスト計算、最適化の実装。
 
-参考: TiDB の [session パッケージ](https://github.com/pingcap/tidb/tree/master/pkg/session)
+または、スキーマ永続化を先に実装する場合は別途計画が必要。

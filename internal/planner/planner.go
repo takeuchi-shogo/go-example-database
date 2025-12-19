@@ -256,6 +256,8 @@ func extractColumnNames(columns []parser.Expression) []string {
 func parseColumnType(typeStr string) storage.ColumnType {
 	switch typeStr {
 	case "INT":
+		return storage.ColumnTypeInt32
+	case "BIGINT":
 		return storage.ColumnTypeInt64
 	case "BOOL":
 		return storage.ColumnTypeBool

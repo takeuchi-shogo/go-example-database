@@ -154,14 +154,12 @@ func toStorageValue(value any) (storage.Value, error) {
 		return storage.StringValue(v), nil
 	case bool:
 		return storage.BoolValue(v), nil
-	// case int:
-	// 	return storage.Int32Value(int32(v)), nil
-	// case int64:
-	// 	return storage.Int64Value(v), nil
-	// case float32:
-	// 	return storage.Float32Value(v), nil
-	// case float64:
-	// return storage.Float64Value(v), nil
+	case int:
+		return storage.Int32Value(int32(v)), nil
+	case int32:
+		return storage.Int32Value(v), nil
+	case int64:
+		return storage.Int64Value(v), nil
 	default:
 		return nil, fmt.Errorf("unsupported value type: %T", v)
 	}

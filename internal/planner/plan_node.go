@@ -142,6 +142,10 @@ func extractValue(v storage.Value) any {
 		return string(val)
 	case storage.BoolValue:
 		return bool(val)
+	case storage.Int32Value:
+		return int(val)
+	case storage.Int64Value:
+		return int64(val)
 	default:
 		return v
 	}

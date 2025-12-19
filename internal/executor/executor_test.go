@@ -282,9 +282,11 @@ func TestToStorageValue(t *testing.T) {
 		{"string", "hello", false},
 		{"bool true", true, false},
 		{"bool false", false, false},
-		{"int", 42, true},       // 未実装
-		{"float", 3.14, true},   // 未実装
-		{"nil", nil, true},      // 未対応
+		{"int", 42, false},
+		{"int32", int32(42), false},
+		{"int64", int64(42), false},
+		{"float", 3.14, true}, // 未実装
+		{"nil", nil, true},    // 未対応
 	}
 
 	for _, tt := range tests {
