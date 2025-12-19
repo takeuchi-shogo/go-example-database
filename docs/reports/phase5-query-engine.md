@@ -697,6 +697,104 @@ type Catalog interface {
 - `internal/planner/plan_node_test.go` - 11 tests
 - `internal/executor/executor_test.go` - 10 tests
 - `internal/executor/result_test.go` - 11 tests
+- `internal/session/session_test.go` - 8 tests
+
+### Int32/Int64 型のサポート
+
+数値型の完全なサポートを実装:
+
+**storage/types.go:**
+```go
+// Int32
+type Int32Value int32
+
+func (v Int32Value) Type() ColumnType { return ColumnTypeInt32 }
+func (v Int32Value) Size() int { return 4 }
+func (v Int32Value) Encode() []byte {
+    buf := make([]byte, 4)
+    binary.LittleEndian.PutUint32(buf, uint32(v))
+    return buf
+}
+
+// Int64
+type Int64Value int64
+
+func (v Int64Value) Type() ColumnType { return ColumnTypeInt64 }
+func (v Int64Value) Size() int { return 8 }
+func (v Int64Value) Encode() []byte {
+    buf := make([]byte, 8)
+    binary.LittleEndian.PutUint64(buf, uint64(v))
+    return buf
+}
+```
+
+**storage/row.go - DecodeRow:**
+```go
+case ColumnTypeInt32:
+    val := int32(binary.LittleEndian.Uint32(data[offset:]))
+    values[i] = Int32Value(val)
+    offset += 4
+
+case ColumnTypeInt64:
+    val := int64(binary.LittleEndian.Uint64(data[offset:]))
+    values[i] = Int64Value(val)
+    offset += 8
+```
+
+**planner/planner.go - parseColumnType:**
+```go
+case "INT":
+    return storage.ColumnTypeInt32
+case "BIGINT":
+    return storage.ColumnTypeInt64
+```
+
+**planner/plan_node.go - extractValue:**
+```go
+case storage.Int32Value:
+    return int(val)
+case storage.Int64Value:
+    return int64(val)
+```
+
+**executor/executor.go - toStorageValue:**
+```go
+case int:
+    return storage.Int32Value(int32(v)), nil
+case int32:
+    return storage.Int32Value(v), nil
+case int64:
+    return storage.Int64Value(v), nil
+```
+
+### Table.Insert バグ修正
+
+複数行の INSERT が正しく動作しない問題を修正:
+
+**変更前（バグあり）:**
+```go
+_, err = page.InsertRow(rowData)
+if err != ErrPageFull {
+    return err  // err == nil でも return してしまう！
+}
+if err == nil {  // ここには到達しない
+    return t.savePage(...)
+}
+```
+
+**変更後:**
+```go
+_, err = page.InsertRow(rowData)
+if err == nil {
+    // 挿入成功、ページを保存
+    return t.savePage((t.numPages - 1).ToPageID(), page)
+}
+if err != ErrPageFull {
+    // ErrPageFull 以外のエラー
+    return err
+}
+// ErrPageFull の場合は新しいページを作成
+```
 
 ### Session パッケージの実装
 
