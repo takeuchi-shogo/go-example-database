@@ -50,3 +50,29 @@ func (v BoolValue) Encode() []byte {
 	}
 	return []byte{0}
 }
+
+// Int32
+type Int32Value int32
+
+func (v Int32Value) Type() ColumnType { return ColumnTypeInt32 }
+
+func (v Int32Value) Size() int { return 4 }
+
+func (v Int32Value) Encode() []byte {
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf, uint32(v))
+	return buf
+}
+
+// Int64
+type Int64Value int64
+
+func (v Int64Value) Type() ColumnType { return ColumnTypeInt64 }
+
+func (v Int64Value) Size() int { return 8 }
+
+func (v Int64Value) Encode() []byte {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, uint64(v))
+	return buf
+}

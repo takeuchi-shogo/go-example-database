@@ -61,10 +61,14 @@ func DecodeRow(data []byte, schema *Schema) (*Row, error) {
 		// 型に応じてデコード
 		switch col.GetColumnType() {
 		case ColumnTypeInt32:
-			// TODO: not implemented
+			val := int32(binary.LittleEndian.Uint32(data[offset:]))
+			values[i] = Int32Value(val)
+			offset += 4
 
 		case ColumnTypeInt64:
-			// TODO: not implemented
+			val := int64(binary.LittleEndian.Uint64(data[offset:]))
+			values[i] = Int64Value(val)
+			offset += 8
 
 		case ColumnTypeString:
 			// 長さを読む（2byte）

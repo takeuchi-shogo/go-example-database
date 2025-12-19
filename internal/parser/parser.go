@@ -13,6 +13,8 @@ type parser struct {
 	errors       []string
 }
 
+// NewParser は新しい Parser を作成する
+// Lexer を受け取り、最初の2つのトークンを読み込む
 func NewParser(lexer *lexer) *parser {
 	p := &parser{lexer: lexer}
 	// 最初の2つのトークンを読み込む

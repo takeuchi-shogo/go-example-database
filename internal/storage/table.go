@@ -46,14 +46,15 @@ func (t *Table) Insert(row *Row) error {
 			return err
 		}
 		_, err = page.InsertRow(rowData)
-		// ErrPageFull なら新しいページへ
-		if err != ErrPageFull {
-			return err
-		}
 		if err == nil {
-			// 入った！ページを保存
+			// 挿入成功、ページを保存
 			return t.savePage((t.numPages - 1).ToPageID(), page)
 		}
+		if err != ErrPageFull {
+			// ErrPageFull 以外のエラー
+			return err
+		}
+		// ErrPageFull の場合は新しいページを作成（下に続く）
 	}
 	// 新しいページを作成
 	page := NewSlottedPage()

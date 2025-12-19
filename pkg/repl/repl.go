@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/takeuchi-shogo/go-example-database/internal/parser"
+	"github.com/takeuchi-shogo/go-example-database/internal/session"
 )
 
 const (
@@ -21,12 +21,13 @@ const (
 )
 
 type Repl struct {
-	input  io.Reader
-	output io.Writer
+	input   io.Reader
+	output  io.Writer
+	session session.Session
 }
 
-func NewRepl(input io.Reader, output io.Writer) *Repl {
-	return &Repl{input: input, output: output}
+func NewRepl(input io.Reader, output io.Writer, session session.Session) *Repl {
+	return &Repl{input: input, output: output, session: session}
 }
 
 func (r *Repl) Run() {
@@ -114,14 +115,12 @@ func (r *Repl) print(s string, args ...interface{}) {
 }
 
 func (r *Repl) eval(input string) {
-	p := parser.NewParser(parser.NewLexer(input))
-	stmt, err := p.Parse()
+	result, err := r.session.Execute(input)
 	if err != nil {
 		fmt.Fprintln(r.output, "Error:", err)
 		return
 	}
-
-	fmt.Fprintln(r.output, stmt)
+	fmt.Fprintln(r.output, result.String())
 }
 
 var goodbyeMessages = []string{

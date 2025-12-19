@@ -7,6 +7,8 @@ type lexer struct {
 	ch           byte   // 現在の文字
 }
 
+// NewLexer は新しい Lexer を作成する
+// SQL 文字列をトークン（単語）に分割する役割を担う
 func NewLexer(input string) *lexer {
 	l := &lexer{input: input}
 	l.readChar()

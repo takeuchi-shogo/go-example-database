@@ -7,12 +7,21 @@ import (
 )
 
 type ResultSet interface {
+	// AddRow は行を追加する
 	AddRow(row *storage.Row)
+	// GetSchema はスキーマを取得する
 	GetSchema() *storage.Schema
+	// GetRows は行を取得する
 	GetRows() []*storage.Row
+	// GetRowCount は行数を取得する
 	GetRowCount() int
+	// GetColumnCount はカラム数を取得する
 	GetColumnCount() int
+	// GetMessage はメッセージを取得する
+	GetMessage() string
+	// IsEmpty は空かどうかを返す
 	IsEmpty() bool
+	// String は文字列を返す
 	String() string
 }
 
