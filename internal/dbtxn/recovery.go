@@ -115,5 +115,6 @@ func (rm *RecoveryManager) undo(txnMap map[uint64]*TxnStatus) error {
 		// Rollback したログを追記
 		rm.wal.LogRollback(status.ID)
 	}
-	return nil
+	// UNDO ログをディスクに書き込む
+	return rm.wal.Flush()
 }

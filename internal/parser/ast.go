@@ -15,12 +15,19 @@ type Expression interface {
 
 // SelectStatement はSELECT文を表す
 type SelectStatement struct {
-	Columns []Expression   // 選択するカラム
-	From    string         // テーブル名
-	Where   Expression     // 条件
+	Columns []Expression    // 選択するカラム
+	From    string          // テーブル名
+	Join    *Join           // 結合条件
+	Where   Expression      // 条件
 	OrderBy []OrderByClause // ソート条件
-	Limit   *int           // 最大行数
-	Offset  *int           // オフセット
+	Limit   *int            // 最大行数
+	Offset  *int            // オフセット
+}
+
+// Join は結合条件を表す
+type Join struct {
+	Table string     // 結合するテーブル名
+	On    Expression // 結合条件
 }
 
 // OrderByClause はソート条件を表す
@@ -71,6 +78,12 @@ type ExplainStatement struct {
 // Identifier はカラム名やテーブル名
 type Identifier struct {
 	Value string // 値
+}
+
+// QualifiedIdentifier は修飾子付きカラム参照（table.column）
+type QualifiedIdentifier struct {
+	TableName  string // テーブル名
+	ColumnName string // カラム名
 }
 
 // StringLiteral は文字列リテラルを表す

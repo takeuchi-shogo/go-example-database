@@ -53,6 +53,8 @@ func (l *lexer) nextToken() *token {
 		tok = newToken(TOKEN_RPAREN, string(l.ch))
 	case '*':
 		tok = newToken(TOKEN_ASTERISK, string(l.ch))
+	case '.':
+		tok = newToken(TOKEN_DOT, string(l.ch))
 	case '<':
 		if l.peekChar() == '=' {
 			ch := l.ch

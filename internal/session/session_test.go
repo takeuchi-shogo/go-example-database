@@ -215,3 +215,153 @@ func TestSessionClose(t *testing.T) {
 		t.Fatalf("Close failed: %v", err)
 	}
 }
+
+func TestSessionJoin(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// users テーブル作成
+	_, err := sess.Execute("CREATE TABLE users (id INT, name VARCHAR(255))")
+	if err != nil {
+		t.Fatalf("CREATE TABLE users failed: %v", err)
+	}
+
+	// orders テーブル作成
+	_, err = sess.Execute("CREATE TABLE orders (id INT, user_id INT, amount INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE orders failed: %v", err)
+	}
+
+	// users にデータ挿入
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (1, 'alice')")
+	if err != nil {
+		t.Fatalf("INSERT into users failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (2, 'bob')")
+	if err != nil {
+		t.Fatalf("INSERT into users failed: %v", err)
+	}
+
+	// orders にデータ挿入
+	_, err = sess.Execute("INSERT INTO orders (id, user_id, amount) VALUES (1, 1, 100)")
+	if err != nil {
+		t.Fatalf("INSERT into orders failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO orders (id, user_id, amount) VALUES (2, 1, 200)")
+	if err != nil {
+		t.Fatalf("INSERT into orders failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO orders (id, user_id, amount) VALUES (3, 2, 150)")
+	if err != nil {
+		t.Fatalf("INSERT into orders failed: %v", err)
+	}
+
+	// JOIN 実行: users.id = orders.user_id
+	result, err := sess.Execute("SELECT * FROM users JOIN orders ON id = user_id")
+	if err != nil {
+		t.Fatalf("SELECT JOIN failed: %v", err)
+	}
+
+	// alice は 2 件、bob は 1 件で合計 3 件
+	if result.GetRowCount() != 3 {
+		t.Errorf("Expected 3 rows, got %d", result.GetRowCount())
+	}
+
+	// カラム数は users(2) + orders(3) = 5
+	if result.GetColumnCount() != 5 {
+		t.Errorf("Expected 5 columns, got %d", result.GetColumnCount())
+	}
+}
+
+func TestSessionJoinNoMatch(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// users テーブル作成
+	_, err := sess.Execute("CREATE TABLE users (id INT, name VARCHAR(255))")
+	if err != nil {
+		t.Fatalf("CREATE TABLE users failed: %v", err)
+	}
+
+	// orders テーブル作成
+	_, err = sess.Execute("CREATE TABLE orders (id INT, user_id INT, amount INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE orders failed: %v", err)
+	}
+
+	// users にデータ挿入
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (1, 'alice')")
+	if err != nil {
+		t.Fatalf("INSERT into users failed: %v", err)
+	}
+
+	// orders にデータ挿入（user_id = 999 でマッチしない）
+	_, err = sess.Execute("INSERT INTO orders (id, user_id, amount) VALUES (1, 999, 100)")
+	if err != nil {
+		t.Fatalf("INSERT into orders failed: %v", err)
+	}
+
+	// JOIN 実行
+	result, err := sess.Execute("SELECT * FROM users JOIN orders ON id = user_id")
+	if err != nil {
+		t.Fatalf("SELECT JOIN failed: %v", err)
+	}
+
+	// マッチする行がないので 0 件
+	if result.GetRowCount() != 0 {
+		t.Errorf("Expected 0 rows, got %d", result.GetRowCount())
+	}
+}
+
+func TestSessionJoinWithQualifiedColumns(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// users テーブル作成
+	_, err := sess.Execute("CREATE TABLE users (id INT, name VARCHAR(255))")
+	if err != nil {
+		t.Fatalf("CREATE TABLE users failed: %v", err)
+	}
+
+	// orders テーブル作成
+	_, err = sess.Execute("CREATE TABLE orders (id INT, user_id INT, amount INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE orders failed: %v", err)
+	}
+
+	// users にデータ挿入
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (1, 'alice')")
+	if err != nil {
+		t.Fatalf("INSERT into users failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (2, 'bob')")
+	if err != nil {
+		t.Fatalf("INSERT into users failed: %v", err)
+	}
+
+	// orders にデータ挿入
+	_, err = sess.Execute("INSERT INTO orders (id, user_id, amount) VALUES (1, 1, 100)")
+	if err != nil {
+		t.Fatalf("INSERT into orders failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO orders (id, user_id, amount) VALUES (2, 2, 200)")
+	if err != nil {
+		t.Fatalf("INSERT into orders failed: %v", err)
+	}
+
+	// 修飾子付き JOIN 実行: users.id = orders.user_id
+	result, err := sess.Execute("SELECT * FROM users JOIN orders ON users.id = orders.user_id")
+	if err != nil {
+		t.Fatalf("SELECT JOIN with qualified columns failed: %v", err)
+	}
+
+	// alice と bob で合計 2 件
+	if result.GetRowCount() != 2 {
+		t.Errorf("Expected 2 rows, got %d", result.GetRowCount())
+	}
+
+	// カラム数は users(2) + orders(3) = 5
+	if result.GetColumnCount() != 5 {
+		t.Errorf("Expected 5 columns, got %d", result.GetColumnCount())
+	}
+}

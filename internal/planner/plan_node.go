@@ -108,9 +108,33 @@ type Expression interface {
 	String() string
 }
 
+// JoinNode は JOIN を表す
+type JoinNode struct {
+	Left      PlanNode   // 左テーブル
+	Right     PlanNode   // 右テーブル
+	JoinType  JoinType   // INNER, LEFT, RIGHT, FULL OUTER
+	Condition Expression // 結合条件
+}
+
+type JoinType string
+
+const (
+	JoinTypeInner JoinType = "INNER"
+	JoinTypeLeft  JoinType = "LEFT"
+	JoinTypeRight JoinType = "RIGHT"
+	JoinTypeFull  JoinType = "FULL OUTER"
+)
+
+func (n *JoinNode) Schema() *storage.Schema { return n.Left.Schema().Merge(n.Right.Schema()) }
+func (n *JoinNode) Children() []PlanNode    { return []PlanNode{n.Left, n.Right} }
+func (n *JoinNode) String() string {
+	return fmt.Sprintf("Join(%s, %s)", n.Left.String(), n.Right.String())
+}
+
 // ColumnRef はカラム参照を表す
 type ColumnRef struct {
-	Name string
+	TableName string // テーブル名（修飾子、空の場合は未指定）
+	Name      string // カラム名
 }
 
 func (e *ColumnRef) Evaluate(row *storage.Row, schema *storage.Schema) (any, error) {
@@ -129,6 +153,9 @@ func (e *ColumnRef) Evaluate(row *storage.Row, schema *storage.Schema) (any, err
 }
 
 func (e *ColumnRef) String() string {
+	if e.TableName != "" {
+		return e.TableName + "." + e.Name
+	}
 	return e.Name
 }
 

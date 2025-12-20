@@ -83,6 +83,9 @@ func (r *resultSet) GetRowCount() int {
 
 // GetColumnCount は結果セットのカラム数を返す
 func (r *resultSet) GetColumnCount() int {
+	if r.schema != nil {
+		return r.schema.GetColumnCount()
+	}
 	return len(r.columns)
 }
 

@@ -37,6 +37,8 @@ func (e *executor) Execute(plan planner.PlanNode) (ResultSet, error) {
 		return e.executeDelete(node)
 	case *planner.CreateTableNode:
 		return e.executeCreateTable(node)
+	case *planner.JoinNode:
+		return e.executeJoin(node)
 	default:
 		return NewResultSetWithMessage(fmt.Sprintf("unsupported plan node type: %T", node)), nil
 	}
@@ -163,4 +165,45 @@ func toStorageValue(value any) (storage.Value, error) {
 	default:
 		return nil, fmt.Errorf("unsupported value type: %T", v)
 	}
+}
+
+func (e *executor) executeJoin(node *planner.JoinNode) (ResultSet, error) {
+	// 左テーブルを実行
+	leftResult, err := e.Execute(node.Left)
+	if err != nil {
+		return nil, err
+	}
+	// 右テーブルを実行
+	rightResult, err := e.Execute(node.Right)
+	if err != nil {
+		return nil, err
+	}
+	// 結合スキーマを作成
+	joinSchema := node.Schema()
+	// 結合条件を評価
+	var joinedRows []*storage.Row
+	for _, leftRow := range leftResult.GetRows() {
+		for _, rightRow := range rightResult.GetRows() {
+			// 左右の行を結合して結合条件を評価
+			mergedRow := mergeRows(leftRow, rightRow)
+			result, err := node.Condition.Evaluate(mergedRow, joinSchema)
+			if err != nil {
+				return nil, err
+			}
+			if match, ok := result.(bool); ok && match {
+				joinedRows = append(joinedRows, mergedRow)
+			}
+		}
+	}
+	return NewResultSetWithRowsAndSchema(joinSchema, joinedRows), nil
+}
+
+// mergeRows は左右の行を結合して新しい行を作成する
+func mergeRows(leftRow, rightRow *storage.Row) *storage.Row {
+	leftValues := leftRow.GetValues()
+	rightValues := rightRow.GetValues()
+	mergedValues := make([]storage.Value, len(leftValues)+len(rightValues))
+	copy(mergedValues, leftValues)
+	copy(mergedValues[len(leftValues):], rightValues)
+	return storage.NewRow(mergedValues)
 }
