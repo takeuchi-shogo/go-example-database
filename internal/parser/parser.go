@@ -44,6 +44,7 @@ func (p *parser) addError(msg string) {
 	p.errors = append(p.errors, msg)
 }
 
+// expectPeek は次のトークンが指定されたトークンかどうかを期待する
 func (p *parser) expectPeek(t TokenType) bool {
 	if p.peekTokenIs(t) {
 		p.nextToken()
@@ -96,6 +97,23 @@ func (p *parser) parseSelectStatement() (*SelectStatement, error) {
 		return nil, fmt.Errorf("expected table name")
 	}
 	stmt.From = p.currentToken.literal
+	// JOIN を期待
+	if p.peekTokenIs(TOKEN_JOIN) {
+		p.nextToken() // JOIN へ
+		p.nextToken() // テーブル名へ
+		joinTable := p.currentToken.literal
+		// ON を期待
+		if !p.expectPeek(TOKEN_ON) {
+			return nil, fmt.Errorf("expected ON token")
+		}
+		p.nextToken() // ON へ
+		// 条件式をパース
+		joinOn, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		stmt.Join = &Join{Table: joinTable, On: joinOn}
+	}
 	// Where句をパース
 	if p.peekTokenIs(TOKEN_WHERE) {
 		p.nextToken() // WHERE へ
@@ -194,7 +212,17 @@ func (p *parser) parseComparisonExpression() (Expression, error) {
 func (p *parser) parsePrimaryExpression() (Expression, error) {
 	switch p.currentToken.tokenType {
 	case TOKEN_IDENT:
-		return &Identifier{Value: p.currentToken.literal}, nil
+		ident := p.currentToken.literal
+		// table.column 形式かチェック
+		if p.peekTokenIs(TOKEN_DOT) {
+			p.nextToken() // . へ
+			p.nextToken() // カラム名へ
+			if !p.currentTokenIs(TOKEN_IDENT) {
+				return nil, fmt.Errorf("expected column name after dot")
+			}
+			return &QualifiedIdentifier{TableName: ident, ColumnName: p.currentToken.literal}, nil
+		}
+		return &Identifier{Value: ident}, nil
 	case TOKEN_INT:
 		val, _ := strconv.ParseInt(p.currentToken.literal, 10, 64)
 		return &IntegerLiteral{Value: int(val)}, nil

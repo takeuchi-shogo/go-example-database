@@ -50,7 +50,8 @@ const (
 	TOKEN_DESC    // DESC
 	TOKEN_LIMIT   // LIMIT
 	TOKEN_OFFSET  // OFFSET
-
+	TOKEN_JOIN    // JOIN
+	TOKEN_ON      // ON
 	// 演算子
 	TOKEN_EQ  // =
 	TOKEN_NEQ // != or <>
@@ -65,6 +66,7 @@ const (
 	TOKEN_LPAREN    // (
 	TOKEN_RPAREN    // )
 	TOKEN_ASTERISK  // *
+	TOKEN_DOT       // .
 )
 
 type token struct {
@@ -108,6 +110,8 @@ var keywords = map[string]TokenType{
 	"DESC":    TOKEN_DESC,
 	"LIMIT":   TOKEN_LIMIT,
 	"OFFSET":  TOKEN_OFFSET,
+	"JOIN":    TOKEN_JOIN,
+	"ON":      TOKEN_ON,
 	// 演算子
 	"EQ":  TOKEN_EQ,
 	"NEQ": TOKEN_NEQ,

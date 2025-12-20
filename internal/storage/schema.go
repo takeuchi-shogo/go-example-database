@@ -58,3 +58,10 @@ func (s *Schema) GetColumns() []Column {
 func (s *Schema) GetColumnCount() int {
 	return len(s.columns)
 }
+
+func (s *Schema) Merge(other *Schema) *Schema {
+	mergedColumns := make([]Column, 0, len(s.columns)+len(other.columns))
+	mergedColumns = append(mergedColumns, s.columns...)
+	mergedColumns = append(mergedColumns, other.columns...)
+	return NewSchema(s.tableName, mergedColumns)
+}

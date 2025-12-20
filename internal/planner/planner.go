@@ -55,7 +55,33 @@ func (p *planner) planSelect(stmt *parser.SelectStatement) (PlanNode, error) {
 		TableSchema: schema,
 	}
 
-	// 2. WHERE 句があればフィルタノードを追加
+	// 2. JOIN 句があれば JOIN ノードを追加
+	if stmt.Join != nil {
+		// 右テーブルのスキーマを取得
+		rightSchema, err := p.catalog.GetSchema(stmt.Join.Table)
+		if err != nil {
+			return nil, fmt.Errorf("table not found: %s", stmt.Join.Table)
+		}
+		// 右テーブルのスキャンノードを作成
+		rightScan := &ScanNode{
+			TableName:   stmt.Join.Table,
+			TableSchema: rightSchema,
+		}
+		// 結合条件をパース
+		condition, err := p.planExpression(stmt.Join.On)
+		if err != nil {
+			return nil, err
+		}
+		// JOIN ノードを作成
+		plan = &JoinNode{
+			Left:      plan,
+			Right:     rightScan,
+			JoinType:  JoinTypeInner,
+			Condition: condition,
+		}
+	}
+
+	// 3. WHERE 句があればフィルタノードを追加
 	if stmt.Where != nil {
 		condition, err := p.planExpression(stmt.Where)
 		if err != nil {
@@ -67,7 +93,7 @@ func (p *planner) planSelect(stmt *parser.SelectStatement) (PlanNode, error) {
 		}
 	}
 
-	// 3. SELECT 列が * でなければプロジェクションノードを追加
+	// 4. SELECT 列が * でなければプロジェクションノードを追加
 	if !isSelectAll(stmt.Columns) {
 		columns := extractColumnNames(stmt.Columns)
 		plan = &ProjectNode{
@@ -202,6 +228,9 @@ func (p *planner) planExpression(expr parser.Expression) (Expression, error) {
 	switch e := expr.(type) {
 	case *parser.Identifier:
 		return &ColumnRef{Name: e.Value}, nil
+
+	case *parser.QualifiedIdentifier:
+		return &ColumnRef{TableName: e.TableName, Name: e.ColumnName}, nil
 
 	case *parser.IntegerLiteral:
 		return &Literal{Value: e.Value}, nil
