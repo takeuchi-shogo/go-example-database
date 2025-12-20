@@ -632,7 +632,7 @@ wal.LogCommit(txnID)
 - [x] Step 5: planner.go
 - [x] Step 6: executor.go
 - [x] Step 7: REPL 統合（Session パターン）
-- [ ] Step 8: join.go
+- [x] Step 8: JOIN 実装
 - [ ] Step 9: aggregate.go
 - [ ] Step 10: cost.go
 - [ ] Step 11: optimizer.go
@@ -978,8 +978,131 @@ Pager は「ページ単位の読み書き」を担当:
 
 現在の Phase 5 では、同一セッション内での SQL 実行が動作すれば OK。
 
+## Step 8: JOIN 実装
+
+### 概要
+
+INNER JOIN クエリのサポートを追加。修飾子付きカラム参照（`users.id = orders.user_id`）にも対応。
+
+### 変更ファイル
+
+| ファイル | 変更内容 |
+|----------|----------|
+| `parser/token.go` | `TOKEN_JOIN`, `TOKEN_ON`, `TOKEN_DOT` 追加 |
+| `parser/lexer.go` | `.` 文字のトークン化 |
+| `parser/ast.go` | `Join`, `QualifiedIdentifier` 構造体追加 |
+| `parser/parser.go` | JOIN 句と修飾子付きカラムのパース |
+| `planner/plan_node.go` | `JoinNode`, `ColumnRef.TableName` 追加 |
+| `planner/planner.go` | `JoinNode` 作成、`QualifiedIdentifier` 変換 |
+| `executor/executor.go` | `executeJoin()` (Nested Loop Join) |
+| `executor/result.go` | `GetColumnCount()` の schema 対応 |
+| `storage/schema.go` | `Schema.Merge()` メソッド追加 |
+| `session/session_test.go` | JOIN テスト 3 件追加 |
+
+### JoinNode の構造
+
+```go
+type JoinNode struct {
+    Left      PlanNode   // 左テーブル
+    Right     PlanNode   // 右テーブル
+    JoinType  JoinType   // INNER, LEFT, RIGHT, FULL OUTER
+    Condition Expression // 結合条件
+}
+
+type JoinType string
+
+const (
+    JoinTypeInner JoinType = "INNER"
+    JoinTypeLeft  JoinType = "LEFT"
+    JoinTypeRight JoinType = "RIGHT"
+    JoinTypeFull  JoinType = "FULL OUTER"
+)
+```
+
+### Nested Loop Join アルゴリズム
+
+```go
+func (e *executor) executeJoin(node *planner.JoinNode) (ResultSet, error) {
+    leftResult, _ := e.Execute(node.Left)
+    rightResult, _ := e.Execute(node.Right)
+    joinSchema := node.Schema()
+
+    var joinedRows []*storage.Row
+    for _, leftRow := range leftResult.GetRows() {
+        for _, rightRow := range rightResult.GetRows() {
+            mergedRow := mergeRows(leftRow, rightRow)
+            result, _ := node.Condition.Evaluate(mergedRow, joinSchema)
+            if match, ok := result.(bool); ok && match {
+                joinedRows = append(joinedRows, mergedRow)
+            }
+        }
+    }
+    return NewResultSetWithRowsAndSchema(joinSchema, joinedRows), nil
+}
+```
+
+計算量: O(n × m) where n = 左テーブル行数, m = 右テーブル行数
+
+### 修飾子付きカラム参照
+
+```sql
+-- 対応前（カラム名のみ）
+SELECT * FROM users JOIN orders ON id = user_id
+
+-- 対応後（テーブル名.カラム名）
+SELECT * FROM users JOIN orders ON users.id = orders.user_id
+```
+
+パース処理:
+
+```go
+case TOKEN_IDENT:
+    ident := p.currentToken.literal
+    if p.peekTokenIs(TOKEN_DOT) {
+        p.nextToken() // . へ
+        p.nextToken() // カラム名へ
+        return &QualifiedIdentifier{TableName: ident, ColumnName: p.currentToken.literal}, nil
+    }
+    return &Identifier{Value: ident}, nil
+```
+
+### Schema.Merge
+
+```go
+func (s *Schema) Merge(other *Schema) *Schema {
+    mergedColumns := make([]Column, 0, len(s.columns)+len(other.columns))
+    mergedColumns = append(mergedColumns, s.columns...)
+    mergedColumns = append(mergedColumns, other.columns...)
+    return NewSchema(s.tableName, mergedColumns)
+}
+```
+
+JOIN 結果のスキーマ = 左テーブルのカラム + 右テーブルのカラム
+
+### テスト
+
+```go
+func TestSessionJoin(t *testing.T)                    // 基本 JOIN
+func TestSessionJoinNoMatch(t *testing.T)             // マッチなし
+func TestSessionJoinWithQualifiedColumns(t *testing.T) // 修飾子付き
+```
+
+### バグ修正
+
+`dbtxn/recovery.go`: `undo()` 後に `Flush()` を呼び出すように修正
+
+```go
+// 修正前
+return nil
+
+// 修正後
+return rm.wal.Flush()
+```
+
+UNDO ログがディスクに永続化されず、リカバリテストが失敗していた。
+
 ## 次のステップ
 
-Step 8 以降: JOIN、集約関数、コスト計算、最適化の実装。
+Step 9 以降: 集約関数（GROUP BY, COUNT, SUM）、コスト計算、最適化の実装。
 
 または、スキーマ永続化を先に実装する場合は別途計画が必要。
