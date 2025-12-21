@@ -39,6 +39,8 @@ func (e *executor) Execute(plan planner.PlanNode) (ResultSet, error) {
 		return e.executeCreateTable(node)
 	case *planner.JoinNode:
 		return e.executeJoin(node)
+	case *planner.AggregateNode:
+		return e.executeAggregate(node)
 	default:
 		return NewResultSetWithMessage(fmt.Sprintf("unsupported plan node type: %T", node)), nil
 	}

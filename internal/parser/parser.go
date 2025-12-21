@@ -13,6 +13,10 @@ type parser struct {
 	errors       []string
 }
 
+func (t *token) GetTokenType() TokenType {
+	return t.tokenType
+}
+
 // NewParser は新しい Parser を作成する
 // Lexer を受け取り、最初の2つのトークンを読み込む
 func NewParser(lexer *lexer) *parser {
@@ -123,6 +127,17 @@ func (p *parser) parseSelectStatement() (*SelectStatement, error) {
 			return nil, err
 		}
 	}
+	// GROUP BY（オプション）
+	if p.peekTokenIs(TOKEN_GROUP) {
+		p.nextToken() // GROUP へ
+		if !p.expectPeek(TOKEN_BY) {
+			return nil, fmt.Errorf("expected BY after GROUP")
+		}
+		stmt.GroupBy, err = p.parseGroupBy()
+		if err != nil {
+			return nil, err
+		}
+	}
 	// ORDER BY（オプション）
 	if p.peekTokenIs(TOKEN_ORDER) {
 		p.nextToken() // ORDER へ
@@ -154,10 +169,18 @@ func (p *parser) parseSelectColumns() ([]Expression, error) {
 	}
 	// カラム名のリスト
 	for {
-		if !p.currentTokenIs(TOKEN_IDENT) {
-			return nil, fmt.Errorf("expected column name")
+		// 集約関数の場合
+		if p.isAggregateFunctionToken() {
+			aggFunc, err := p.parseAggregateFunction()
+			if err != nil {
+				return nil, err
+			}
+			columns = append(columns, aggFunc)
+		} else if p.currentTokenIs(TOKEN_IDENT) {
+			columns = append(columns, &Identifier{Value: p.currentToken.literal})
+		} else {
+			return nil, fmt.Errorf("expected column name or aggregate function")
 		}
-		columns = append(columns, &Identifier{Value: p.currentToken.literal})
 		if !p.peekTokenIs(TOKEN_COMMA) {
 			break
 		}
@@ -515,4 +538,52 @@ func (p *parser) parseExplainStatement() (*ExplainStatement, error) {
 
 func (p *parser) Errors() []string {
 	return p.errors
+}
+
+func (p *parser) isAggregateFunctionToken() bool {
+	switch p.currentToken.tokenType {
+	case TOKEN_COUNT, TOKEN_SUM, TOKEN_AVG, TOKEN_MAX, TOKEN_MIN:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *parser) parseAggregateFunction() (Expression, error) {
+	funcName := p.currentToken.literal
+
+	if !p.expectPeek(TOKEN_LPAREN) {
+		return nil, fmt.Errorf("expected ( after %s", funcName)
+	}
+	p.nextToken() // 引数へ
+
+	var arg Expression
+	if p.currentTokenIs(TOKEN_ASTERISK) {
+		arg = &Asterisk{}
+	} else if p.currentTokenIs(TOKEN_IDENT) {
+		arg = &Identifier{Value: p.currentToken.literal}
+	} else {
+		return nil, fmt.Errorf("expected * or column name")
+	}
+	if !p.expectPeek(TOKEN_RPAREN) {
+		return nil, fmt.Errorf("expected ) after arguments")
+	}
+
+	return &AggregateFunction{Function: funcName, Argument: arg}, nil
+}
+
+func (p *parser) parseGroupBy() ([]string, error) {
+	columns := []string{}
+	for {
+		p.nextToken() // カラム名へ
+		if !p.currentTokenIs(TOKEN_IDENT) {
+			return nil, fmt.Errorf("expected column name")
+		}
+		columns = append(columns, p.currentToken.literal)
+		if !p.peekTokenIs(TOKEN_COMMA) {
+			break
+		}
+		p.nextToken() // COMMA へ
+	}
+	return columns, nil
 }

@@ -19,6 +19,7 @@ type SelectStatement struct {
 	From    string          // テーブル名
 	Join    *Join           // 結合条件
 	Where   Expression      // 条件
+	GroupBy []string        // GROUP BY 句
 	OrderBy []OrderByClause // ソート条件
 	Limit   *int            // 最大行数
 	Offset  *int            // オフセット
@@ -110,4 +111,10 @@ type BinaryExpression struct {
 
 // Asterisk は*を表す
 type Asterisk struct {
+}
+
+// AggregateFunction は集約関数を表す
+type AggregateFunction struct {
+	Function string     // COUNT, SUM, AVG, MAX, MIN
+	Argument Expression // 引数
 }

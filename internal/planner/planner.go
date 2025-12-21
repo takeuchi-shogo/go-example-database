@@ -93,8 +93,17 @@ func (p *planner) planSelect(stmt *parser.SelectStatement) (PlanNode, error) {
 		}
 	}
 
-	// 4. SELECT 列が * でなければプロジェクションノードを追加
-	if !isSelectAll(stmt.Columns) {
+	// 4. 集約関数がある場合は AggregateNode を追加
+	//    集約関数がない場合は SELECT 列が * でなければ ProjectNode を追加
+	if hasAggregateFunction(stmt.Columns) {
+		aggregates := extractAggregateFunctions(stmt.Columns)
+		plan = &AggregateNode{
+			Child:      plan,
+			GroupBy:    stmt.GroupBy,
+			Aggregates: aggregates,
+			schema:     plan.Schema(),
+		}
+	} else if !isSelectAll(stmt.Columns) {
 		columns := extractColumnNames(stmt.Columns)
 		plan = &ProjectNode{
 			Columns: columns,
@@ -103,6 +112,32 @@ func (p *planner) planSelect(stmt *parser.SelectStatement) (PlanNode, error) {
 	}
 
 	return plan, nil
+}
+
+// hasAggregateFunction は SELECT 列に集約関数が含まれているかどうかを判定する
+func hasAggregateFunction(columns []parser.Expression) bool {
+	for _, col := range columns {
+		if _, ok := col.(*parser.AggregateFunction); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// extractAggregateFunctions は SELECT 列から集約関数を抽出する
+func extractAggregateFunctions(columns []parser.Expression) []AggregateExpression {
+	var aggregates []AggregateExpression
+	for _, col := range columns {
+		if agg, ok := col.(*parser.AggregateFunction); ok {
+			columnName := ""
+			if identity, ok := agg.Argument.(*parser.Identifier); ok {
+				columnName = identity.Value
+			}
+			// * の場合は全カラムを集約
+			aggregates = append(aggregates, AggregateExpression{Function: agg.Function, Column: columnName})
+		}
+	}
+	return aggregates
 }
 
 // planInsert は INSERT 文を PlanNode に変換する

@@ -6,6 +6,7 @@ import (
 
 	"github.com/takeuchi-shogo/go-example-database/internal/catalog"
 	"github.com/takeuchi-shogo/go-example-database/internal/executor"
+	"github.com/takeuchi-shogo/go-example-database/internal/storage"
 )
 
 func setupTestSession(t *testing.T) (Session, func()) {
@@ -363,5 +364,252 @@ func TestSessionJoinWithQualifiedColumns(t *testing.T) {
 	// カラム数は users(2) + orders(3) = 5
 	if result.GetColumnCount() != 5 {
 		t.Errorf("Expected 5 columns, got %d", result.GetColumnCount())
+	}
+}
+
+func TestSessionAggregateCount(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// テーブル作成
+	_, err := sess.Execute("CREATE TABLE users (id INT, name VARCHAR(255))")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// データ挿入
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (1, 'alice')")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (2, 'bob')")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (3, 'charlie')")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+
+	// COUNT(*) 実行
+	result, err := sess.Execute("SELECT COUNT(*) FROM users")
+	if err != nil {
+		t.Fatalf("SELECT COUNT(*) failed: %v", err)
+	}
+
+	// 結果は1行
+	if result.GetRowCount() != 1 {
+		t.Errorf("Expected 1 row, got %d", result.GetRowCount())
+	}
+
+	// COUNT の結果を確認
+	rows := result.GetRows()
+	if len(rows) != 1 {
+		t.Fatalf("Expected 1 row, got %d", len(rows))
+	}
+	values := rows[0].GetValues()
+	if len(values) != 1 {
+		t.Fatalf("Expected 1 value, got %d", len(values))
+	}
+	// COUNT は storage.Int64Value を返す
+	count, ok := values[0].(storage.Int64Value)
+	if !ok {
+		t.Fatalf("Expected storage.Int64Value, got %T", values[0])
+	}
+	if int64(count) != 3 {
+		t.Errorf("Expected COUNT(*) = 3, got %d", int64(count))
+	}
+}
+
+func TestSessionAggregateSum(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// テーブル作成
+	_, err := sess.Execute("CREATE TABLE orders (id INT, amount INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// データ挿入
+	_, err = sess.Execute("INSERT INTO orders (id, amount) VALUES (1, 100)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO orders (id, amount) VALUES (2, 200)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO orders (id, amount) VALUES (3, 300)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+
+	// SUM(amount) 実行
+	result, err := sess.Execute("SELECT SUM(amount) FROM orders")
+	if err != nil {
+		t.Fatalf("SELECT SUM(amount) failed: %v", err)
+	}
+
+	// 結果は1行
+	if result.GetRowCount() != 1 {
+		t.Errorf("Expected 1 row, got %d", result.GetRowCount())
+	}
+
+	// SUM の結果を確認 (100 + 200 + 300 = 600)
+	rows := result.GetRows()
+	values := rows[0].GetValues()
+	sum, ok := values[0].(storage.Int64Value)
+	if !ok {
+		t.Fatalf("Expected storage.Int64Value, got %T", values[0])
+	}
+	if int64(sum) != 600 {
+		t.Errorf("Expected SUM(amount) = 600, got %d", int64(sum))
+	}
+}
+
+func TestSessionAggregateAvg(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// テーブル作成
+	_, err := sess.Execute("CREATE TABLE scores (id INT, score INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// データ挿入
+	_, err = sess.Execute("INSERT INTO scores (id, score) VALUES (1, 80)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO scores (id, score) VALUES (2, 90)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO scores (id, score) VALUES (3, 100)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+
+	// AVG(score) 実行
+	result, err := sess.Execute("SELECT AVG(score) FROM scores")
+	if err != nil {
+		t.Fatalf("SELECT AVG(score) failed: %v", err)
+	}
+
+	// 結果は1行
+	if result.GetRowCount() != 1 {
+		t.Errorf("Expected 1 row, got %d", result.GetRowCount())
+	}
+
+	// AVG の結果を確認 ((80 + 90 + 100) / 3 = 90)
+	rows := result.GetRows()
+	values := rows[0].GetValues()
+	avg, ok := values[0].(storage.Int64Value)
+	if !ok {
+		t.Fatalf("Expected storage.Int64Value, got %T", values[0])
+	}
+	if int64(avg) != 90 {
+		t.Errorf("Expected AVG(score) = 90, got %d", int64(avg))
+	}
+}
+
+func TestSessionAggregateMaxMin(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// テーブル作成
+	_, err := sess.Execute("CREATE TABLE values_table (id INT, value INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// データ挿入
+	_, err = sess.Execute("INSERT INTO values_table (id, value) VALUES (1, 50)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO values_table (id, value) VALUES (2, 100)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO values_table (id, value) VALUES (3, 25)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+
+	// MAX(value) 実行
+	result, err := sess.Execute("SELECT MAX(value) FROM values_table")
+	if err != nil {
+		t.Fatalf("SELECT MAX(value) failed: %v", err)
+	}
+
+	rows := result.GetRows()
+	values := rows[0].GetValues()
+	max, ok := values[0].(storage.Int64Value)
+	if !ok {
+		t.Fatalf("Expected storage.Int64Value, got %T", values[0])
+	}
+	if int64(max) != 100 {
+		t.Errorf("Expected MAX(value) = 100, got %d", int64(max))
+	}
+
+	// MIN(value) 実行
+	result, err = sess.Execute("SELECT MIN(value) FROM values_table")
+	if err != nil {
+		t.Fatalf("SELECT MIN(value) failed: %v", err)
+	}
+
+	rows = result.GetRows()
+	values = rows[0].GetValues()
+	min, ok := values[0].(storage.Int64Value)
+	if !ok {
+		t.Fatalf("Expected storage.Int64Value, got %T", values[0])
+	}
+	if int64(min) != 25 {
+		t.Errorf("Expected MIN(value) = 25, got %d", int64(min))
+	}
+}
+
+func TestSessionAggregateWithWhere(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// テーブル作成
+	_, err := sess.Execute("CREATE TABLE products (id INT, price INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// データ挿入
+	_, err = sess.Execute("INSERT INTO products (id, price) VALUES (1, 50)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO products (id, price) VALUES (2, 150)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	_, err = sess.Execute("INSERT INTO products (id, price) VALUES (3, 200)")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+
+	// WHERE + COUNT 実行
+	result, err := sess.Execute("SELECT COUNT(*) FROM products WHERE price > 100")
+	if err != nil {
+		t.Fatalf("SELECT COUNT(*) WHERE failed: %v", err)
+	}
+
+	rows := result.GetRows()
+	values := rows[0].GetValues()
+	count, ok := values[0].(storage.Int64Value)
+	if !ok {
+		t.Fatalf("Expected storage.Int64Value, got %T", values[0])
+	}
+	// price > 100 は 150, 200 の2件
+	if int64(count) != 2 {
+		t.Errorf("Expected COUNT(*) WHERE price > 100 = 2, got %d", int64(count))
 	}
 }
