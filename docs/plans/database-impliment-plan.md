@@ -1,5 +1,18 @@
 # minidb 開発ロードマップ
 
+## 実装進捗サマリー
+
+| Phase | 状態 | 備考 |
+|-------|------|------|
+| Phase 1: ストレージエンジン | ✅ 完了 | |
+| Phase 2: インデックス | ✅ 完了 | Delete は未実装 |
+| Phase 3: SQLパーサー & REPL | ✅ 完了 | |
+| Phase 4: トランザクション | ⚠ 部分完了 | 実際の DB 操作との統合が未完了 |
+| Phase 5: クエリ最適化 & 高度な機能 | ✅ 完了 | |
+| Phase 6: レプリケーション | 🔜 次のフェーズ | |
+
+---
+
 ## Phase 1: ストレージエンジン ✅ 完了
 
 - [x] page.go - ページ構造体
@@ -12,73 +25,98 @@
 
 ---
 
-## Phase 2: インデックス 👈 今ここ！
+## Phase 2: インデックス ✅ 完了
 
-- [ ] btree.go - B+Tree の実装
-  - [ ] ノード構造（リーフノード / 内部ノード）
-  - [ ] 検索（Search）
-  - [ ] 挿入（Insert）
-  - [ ] ノード分割（Split）
-  - [ ] 削除（Delete）※後回しでもOK
-- [ ] index.go - インデックス管理
-  - [ ] プライマリキーインデックス
-  - [ ] セカンダリインデックス（後でもOK）
+- [x] btree.go - B+Tree の実装
+  - [x] ノード構造（リーフノード / 内部ノード）
+  - [x] 検索（Search）- 二分探索で O(log n)
+  - [x] 挿入（Insert）
+  - [x] ノード分割（Split）
+  - [ ] 削除（Delete）※後回し
+- [x] index.go - インデックス管理
+  - [x] プライマリキーインデックス
+  - [x] ユニークインデックス
+  - [x] セカンダリインデックス
 
-**ゴール**: `table.Find(id)` が O(log n) で動く
-
----
-
-## Phase 3: SQLパーサー & REPL
-
-- [ ] lexer.go - トークン分割（字句解析）
-- [ ] token.go - トークン定義
-- [ ] ast.go - 抽象構文木（AST）
-- [ ] parser.go - 構文解析
-  - [ ] SELECT文
-  - [ ] INSERT文
-  - [ ] CREATE TABLE文
-  - [ ] DELETE文
-  - [ ] WHERE句
-- [ ] repl.go - 対話シェル（Read-Eval-Print Loop）
-
-**ゴール**: `SELECT * FROM users WHERE id = 1` が動く
+**達成**: `table.Find(id)` が O(log n) で動く
 
 ---
 
-## Phase 4: トランザクション
+## Phase 3: SQLパーサー & REPL ✅ 完了
 
-- [ ] wal.go - Write-Ahead Log
-  - [ ] ログレコード構造
-  - [ ] ログ書き込み
-  - [ ] チェックポイント
-- [ ] transaction.go - トランザクション管理
-  - [ ] BEGIN / COMMIT / ROLLBACK
-  - [ ] ACID保証
-- [ ] recovery.go - クラッシュリカバリ
-  - [ ] REDO処理
-  - [ ] UNDO処理
+- [x] lexer.go - トークン分割（字句解析）
+- [x] token.go - トークン定義
+- [x] ast.go - 抽象構文木（AST）
+- [x] parser.go - 構文解析
+  - [x] SELECT文
+  - [x] INSERT文
+  - [x] CREATE TABLE文
+  - [x] DELETE文
+  - [x] UPDATE文
+  - [x] WHERE句
+  - [x] JOIN句
+  - [x] GROUP BY句
+- [x] repl.go - 対話シェル（Read-Eval-Print Loop）
+- [x] session.go - セッション管理
+- [x] catalog.go - カタログ管理
 
-**ゴール**: クラッシュしてもデータが壊れない
-
----
-
-## Phase 5: クエリ最適化 & 高度な機能
-
-- [ ] planner.go - 実行計画作成
-- [ ] optimizer.go - クエリ最適化
-  - [ ] インデックス選択
-  - [ ] コスト計算
-- [ ] join.go - JOIN実装
-  - [ ] Nested Loop Join
-  - [ ] Hash Join（発展）
-- [ ] aggregate.go - 集約関数
-  - [ ] COUNT, SUM, AVG, MAX, MIN
-
-**ゴール**: 複数テーブルのJOINが動く
+**達成**: `SELECT * FROM users WHERE id = 1` が動く
 
 ---
 
-## Phase 6: レプリケーション（複製）
+## Phase 4: トランザクション ⚠ 部分完了
+
+- [x] wal.go - Write-Ahead Log
+  - [x] ログレコード構造（LSN, TxnID, LogType, Before/After）
+  - [x] ログ書き込み（Append, Flush）
+  - [x] ログ読み込み（Read）
+  - [x] チェックポイント（Checkpoint）
+- [x] transaction.go - トランザクション管理
+  - [x] BEGIN / COMMIT / ROLLBACK
+  - [ ] 実際のテーブル操作との統合
+- [x] recovery.go - クラッシュリカバリ
+  - [x] REDO処理（基本構造）
+  - [x] UNDO処理（基本構造）
+  - [ ] 実際のテーブル操作との統合
+
+**残タスク**:
+
+- [ ] WAL とテーブル操作の統合（INSERT/UPDATE/DELETE 時に WAL 記録）
+- [ ] リカバリ時の実際のデータ復元
+- [ ] ACID 保証のテスト
+
+---
+
+## Phase 5: クエリ最適化 & 高度な機能 ✅ 完了
+
+- [x] planner.go - 実行計画作成
+  - [x] PlanNode インターフェース
+  - [x] ScanNode, FilterNode, ProjectNode
+  - [x] JoinNode, AggregateNode
+  - [x] InsertNode, UpdateNode, DeleteNode
+  - [x] CreateTableNode, EmptyNode
+- [x] optimizer.go - クエリ最適化
+  - [x] Rule インターフェース
+  - [x] 再帰的な子ノード最適化
+- [x] rule.go - 最適化ルール
+  - [x] FilterPushDownRule - フィルタ押し下げ
+  - [x] ConstantFoldingRule - 定数畳み込み
+- [x] cost.go - コストモデル
+  - [x] Cost インターフェース
+  - [x] 行数ベースのコスト計算
+- [x] cost_estimator.go - コスト推定
+  - [x] 各 PlanNode のコスト推定
+- [x] executor.go - クエリ実行エンジン
+  - [x] Iterator パターン
+  - [x] 各ノードの実行
+- [x] aggregate.go - 集約関数
+  - [x] COUNT, SUM, AVG, MAX, MIN
+
+**達成**: 複数テーブルの JOIN が動く
+
+---
+
+## Phase 6: レプリケーション（複製）👈 次のフェーズ
 
 - [ ] raft/raft.go - Raftコンセンサスアルゴリズム
   - [ ] リーダー選挙（Leader Election）
@@ -190,7 +228,7 @@
 
 ---
 
-## ディレクトリ構成（最終形）
+## 現在のディレクトリ構成
 
 ```
 minidb/
@@ -206,55 +244,49 @@ minidb/
 │   │   ├── schema.go
 │   │   ├── row.go
 │   │   └── table.go
-│   ├── index/            # Phase 2
+│   ├── index/            # Phase 2 ✅
 │   │   ├── btree.go
 │   │   └── index.go
-│   ├── parser/           # Phase 3
+│   ├── parser/           # Phase 3 ✅
 │   │   ├── token.go
 │   │   ├── lexer.go
 │   │   ├── ast.go
 │   │   └── parser.go
-│   ├── executor/         # Phase 3, 5
+│   ├── executor/         # Phase 5 ✅
 │   │   ├── executor.go
-│   │   ├── select.go
-│   │   ├── insert.go
-│   │   ├── delete.go
-│   │   ├── join.go
+│   │   ├── iterator.go
+│   │   ├── result.go
 │   │   └── aggregate.go
-│   ├── planner/          # Phase 5
+│   ├── planner/          # Phase 5 ✅
 │   │   ├── planner.go
-│   │   └── optimizer.go
-│   ├── tx/               # Phase 4
+│   │   ├── plan_node.go
+│   │   ├── optimizer.go
+│   │   ├── rule.go
+│   │   ├── cost.go
+│   │   └── cost_estimator.go
+│   ├── dbtxn/            # Phase 4 ⚠
 │   │   ├── wal.go
 │   │   ├── transaction.go
-│   │   ├── mvcc.go
 │   │   └── recovery.go
-│   ├── raft/             # Phase 6
-│   │   ├── raft.go
-│   │   ├── log.go
-│   │   ├── state.go
-│   │   └── transport.go
-│   ├── sharding/         # Phase 8
-│   │   ├── range.go
-│   │   ├── router.go
-│   │   └── rebalance.go
-│   ├── distributed/      # Phase 7, 9
-│   │   ├── coordinator.go
-│   │   ├── two_phase_commit.go
-│   │   ├── timestamp.go
-│   │   ├── planner.go
-│   │   ├── executor.go
-│   │   └── join.go
-│   ├── cluster/          # Phase 10
-│   │   ├── membership.go
-│   │   └── metadata.go
-│   ├── monitoring/       # Phase 10
-│   │   └── metrics.go
-│   └── admin/            # Phase 10
-│       └── api.go
+│   ├── catalog/          # Phase 3 ✅
+│   │   └── catalog.go
+│   ├── session/          # Phase 3 ✅
+│   │   └── session.go
+│   ├── raft/             # Phase 6 (未実装)
+│   ├── sharding/         # Phase 8 (未実装)
+│   ├── distributed/      # Phase 7, 9 (未実装)
+│   ├── cluster/          # Phase 10 (未実装)
+│   ├── monitoring/       # Phase 10 (未実装)
+│   └── admin/            # Phase 10 (未実装)
 ├── pkg/
-│   └── repl/
+│   └── repl/             # Phase 3 ✅
 │       └── repl.go
+├── docs/
+│   ├── plans/
+│   │   └── database-impliment-plan.md
+│   ├── reports/
+│   │   └── phase5-query-engine.md
+│   └── agent/
 ├── go.mod
 └── README.md
 ```
@@ -282,9 +314,25 @@ minidb/
 
 ## マイルストーン
 
-| Phase | 達成すると... |
-|-------|-------------|
-| 1-3   | 🎉 自作DBでSQLが動く！ |
-| 4-5   | 🎉 本格的なRDBMSになる！ |
-| 6-7   | 🎉 落ちても復旧できる分散DB！ |
-| 8-10  | 🎉 TiDB/CockroachDB級の分散DB！ |
+| Phase | 達成すると... | 状態 |
+|-------|-------------|------|
+| 1-3   | 自作DBでSQLが動く！ | ✅ 達成 |
+| 4-5   | 本格的なRDBMSになる！ | ⚠ ほぼ達成 |
+| 6-7   | 落ちても復旧できる分散DB！ | 🔜 次 |
+| 8-10  | TiDB/CockroachDB級の分散DB！ | 📋 予定 |
+
+---
+
+## 次のアクション
+
+### オプション A: Phase 6 に進む（レプリケーション）
+
+分散システムの基盤となる Raft コンセンサスアルゴリズムを実装する。
+
+### オプション B: Phase 4 を完成させる（トランザクション統合）
+
+WAL とテーブル操作を統合し、ACID 保証を完成させる。
+
+### オプション C: Phase 2 の残りを実装（B+Tree Delete）
+
+B+Tree の Delete 操作を実装して、インデックス機能を完成させる。
