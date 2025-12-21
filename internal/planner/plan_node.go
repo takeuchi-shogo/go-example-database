@@ -296,3 +296,15 @@ type AggregateExpression struct {
 	Column   string // カラム名
 	Alias    string // AS のエイリアス
 }
+
+type EmptyNode struct {
+	schema *storage.Schema
+}
+
+func NewEmptyNode(schema *storage.Schema) *EmptyNode {
+	return &EmptyNode{schema: schema}
+}
+
+func (n *EmptyNode) Schema() *storage.Schema { return n.schema }
+func (n *EmptyNode) Children() []PlanNode    { return nil }
+func (n *EmptyNode) String() string          { return "Empty" }
