@@ -1374,7 +1374,190 @@ Step 10 以降: コスト計算、最適化の実装。
 
 ### 残タスク
 
-- [ ] Step 10: cost.go（コスト計算）
-- [ ] Step 11: optimizer.go（クエリ最適化）
+- [x] Step 10: cost.go（コスト計算）
+- [x] Step 11: optimizer.go（クエリ最適化）
 - [ ] GROUP BY ありの集約処理
 - [ ] recovery.go の実データ操作（Phase 4 の続き）
+
+---
+
+## Step 10: コスト計算の実装
+
+### 概要
+
+クエリ実行計画のコスト推定機能を追加。各 PlanNode に対してコストを計算し、最適化の判断材料とする。
+
+### 変更ファイル
+
+| ファイル | 内容 |
+|----------|------|
+| `internal/planner/cost.go` | Cost インターフェースと構造体 |
+| `internal/planner/cost_estimator.go` | CostEstimator の実装 |
+| `internal/planner/cost_test.go` | テスト（4件） |
+| `internal/planner/cost_estimator_test.go` | テスト（8件） |
+| `internal/storage/table.go` | `GetRowCost()` メソッド追加 |
+
+### Cost 構造体
+
+```go
+type Cost interface {
+    GetRowCost() float64
+    AddRowCost(rowCost float64)
+    MultiplyRowCount(factor float64)
+}
+
+type cost struct {
+    RowCost    float64 // 予想行数
+    CPUCost    float64 // 予想CPUコスト
+    IOCost     float64 // 予想入出力コスト
+    MemoryCost float64 // 予想メモリコスト
+}
+```
+
+### コスト計算モデル
+
+| ノード | コスト計算 |
+|--------|-----------|
+| ScanNode | テーブルの行数 |
+| FilterNode | 子ノードのコスト × 0.1（選択率） |
+| ProjectNode | 子ノードのコストをそのまま |
+| JoinNode | 左テーブル行数 × 右テーブル行数 |
+| AggregateNode | 子ノードのコスト |
+
+---
+
+## Step 11: クエリ最適化の実装
+
+### 概要
+
+Optimizer を実装し、実行計画を変換してより効率的な計画を生成する。
+
+### 変更ファイル
+
+| ファイル | 内容 |
+|----------|------|
+| `internal/planner/optimizer.go` | Optimizer インターフェースと実装 |
+| `internal/planner/rule.go` | 最適化ルール（ConstantFolding, FilterPushDown） |
+| `internal/planner/optimizer_test.go` | テスト（5件） |
+| `internal/planner/rule_test.go` | テスト（17件） |
+| `internal/planner/plan_node.go` | EmptyNode 追加 |
+
+### アーキテクチャ
+
+```
+AST
+  ↓
+Planner
+  ↓
+Plan Tree（未最適化）
+  ↓
+Optimizer ← CostEstimator を使用
+  ↓
+Optimized Plan Tree
+  ↓
+Executor
+```
+
+### 実装した最適化ルール
+
+#### 1. ConstantFoldingRule（定数畳み込み）
+
+定数式をコンパイル時に計算して置き換える。
+
+```sql
+-- 変換前
+SELECT * FROM users WHERE 1 + 1 = 2
+
+-- 変換後（FilterNode が削除される）
+SELECT * FROM users
+```
+
+**動作:**
+- 定数同士の演算（+, -, *, /）を計算
+- 定数同士の比較（=, <, >, <=, >=, !=）を計算
+- 論理演算（AND, OR）を計算
+- 条件が常に `true` なら FilterNode を削除
+- 条件が常に `false` なら EmptyNode を返す
+
+#### 2. FilterPushDownRule（フィルタ押し下げ）
+
+WHERE 条件を JOIN の下に移動して、結合前にデータを絞り込む。
+
+```
+変換前:                     変換後:
+─────────                  ─────────
+Filter(age > 30)               Join
+       │                       /   \
+     Join              Filter(age>30)  orders
+     /   \                   │
+  users  orders            users
+```
+
+**動作:**
+- フィルタ条件が参照するカラムを分析
+- 左テーブルのカラムのみ → 左に押し下げ
+- 右テーブルのカラムのみ → 右に押し下げ
+- 両方のテーブルを参照 → 押し下げ不可
+
+### Optimizer の実装
+
+```go
+type Optimizer interface {
+    Optimize(plan PlanNode) (PlanNode, error)
+}
+
+func (o *optimizer) Optimize(plan PlanNode) (PlanNode, error) {
+    // 1. 子ノードを再帰的に最適化
+    optimized, err := o.optimizeChildren(plan)
+    if err != nil {
+        return nil, err
+    }
+    // 2. 各ルールを適用
+    for _, rule := range o.rules {
+        if rule.Match(optimized) {
+            newPlan, err := rule.Apply(optimized)
+            if err != nil {
+                return nil, err
+            }
+            optimized = newPlan
+        }
+    }
+    return optimized, nil
+}
+```
+
+### EmptyNode
+
+WHERE 条件が常に false の場合に返すノード。
+
+```go
+type EmptyNode struct {
+    schema *storage.Schema
+}
+
+func (n *EmptyNode) Schema() *storage.Schema { return n.schema }
+func (n *EmptyNode) Children() []PlanNode    { return nil }
+func (n *EmptyNode) String() string          { return "Empty" }
+```
+
+---
+
+## Phase 5 完了
+
+Phase 5 のクエリ実行エンジンの実装が完了。
+
+### 実装済みの機能
+
+| Step | 内容 | 状態 |
+|------|------|------|
+| 1-7 | Planner, Executor, REPL統合 | ✅ 完了 |
+| 8 | JOIN 実装（Nested Loop Join） | ✅ 完了 |
+| 9 | 集約関数（COUNT, SUM, AVG, MAX, MIN） | ✅ 完了 |
+| 10 | コスト計算（CostEstimator） | ✅ 完了 |
+| 11 | クエリ最適化（Optimizer） | ✅ 完了 |
+
+### 残タスク（将来の拡張）
+
+- GROUP BY ありの集約処理
+- Hash Join の実装
+- より高度な最適化ルール（Join Order Optimization など）
