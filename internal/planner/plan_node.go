@@ -277,3 +277,22 @@ func compareValues(left, right any) int {
 	}
 	return 0
 }
+
+type AggregateNode struct {
+	Child      PlanNode              // 子ノード
+	GroupBy    []string              // GROUP BY 句
+	Aggregates []AggregateExpression // 集約関数
+	schema     *storage.Schema       // スキーマ
+}
+
+func (n *AggregateNode) Schema() *storage.Schema { return n.schema }
+func (n *AggregateNode) Children() []PlanNode    { return []PlanNode{n.Child} }
+func (n *AggregateNode) String() string {
+	return fmt.Sprintf("Aggregate(%v, %v)", n.GroupBy, n.Aggregates)
+}
+
+type AggregateExpression struct {
+	Function string // COUNT, SUM, AVG, MAX, MIN
+	Column   string // カラム名
+	Alias    string // AS のエイリアス
+}

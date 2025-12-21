@@ -29,14 +29,18 @@ const (
 	TOKEN_SET    // SET
 	TOKEN_VALUES // VALUES
 	TOKEN_INTO   // INTO
-
 	// キーワード(DDL)
 	TOKEN_CREATE  // CREATE
 	TOKEN_DROP    // DROP
 	TOKEN_ALTER   // ALTER
 	TOKEN_TABLE   // TABLE
 	TOKEN_EXPLAIN // EXPLAIN
-
+	// 集約関数
+	TOKEN_COUNT // COUNT
+	TOKEN_SUM   // SUM
+	TOKEN_AVG   // AVG
+	TOKEN_MAX   // MAX
+	TOKEN_MIN   // MIN
 	// 修飾子・句
 	TOKEN_AND     // AND
 	TOKEN_OR      //OR
@@ -97,6 +101,12 @@ var keywords = map[string]TokenType{
 	"ALTER":   TOKEN_ALTER,
 	"TABLE":   TOKEN_TABLE,
 	"EXPLAIN": TOKEN_EXPLAIN,
+	// 集約関数
+	"COUNT": TOKEN_COUNT,
+	"SUM":   TOKEN_SUM,
+	"AVG":   TOKEN_AVG,
+	"MAX":   TOKEN_MAX,
+	"MIN":   TOKEN_MIN,
 	// 修飾子・句
 	"AND":     TOKEN_AND,
 	"OR":      TOKEN_OR,

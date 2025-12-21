@@ -59,6 +59,16 @@ func (s *Schema) GetColumnCount() int {
 	return len(s.columns)
 }
 
+// カラムのインデックスを取得する
+func (s *Schema) GetColumnIndex(name string) int {
+	for i, col := range s.columns {
+		if col.name == name {
+			return i
+		}
+	}
+	return -1
+}
+
 func (s *Schema) Merge(other *Schema) *Schema {
 	mergedColumns := make([]Column, 0, len(s.columns)+len(other.columns))
 	mergedColumns = append(mergedColumns, s.columns...)

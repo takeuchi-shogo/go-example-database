@@ -633,7 +633,7 @@ wal.LogCommit(txnID)
 - [x] Step 6: executor.go
 - [x] Step 7: REPL 統合（Session パターン）
 - [x] Step 8: JOIN 実装
-- [ ] Step 9: aggregate.go
+- [x] Step 9: aggregate.go（GROUP BY なしの集約関数）
 - [ ] Step 10: cost.go
 - [ ] Step 11: optimizer.go
 
@@ -1101,8 +1101,257 @@ return rm.wal.Flush()
 
 UNDO ログがディスクに永続化されず、リカバリテストが失敗していた。
 
+## Step 9: 集約関数（GROUP BY, COUNT, SUM）実装
+
+### 概要
+
+集約関数（COUNT, SUM, AVG, MAX, MIN）と GROUP BY 句のサポートを追加。
+
+### データフロー図
+
+```
+SQL クエリ
+    ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Parser (parser.go)                                              │
+│   parseSelectColumns() で集約関数を検出                          │
+│   parseGroupBy() で GROUP BY カラムを抽出                        │
+│   ↓                                                             │
+│   SelectStatement {                                             │
+│     Columns: [AggregateFunction{Function: "COUNT", Arg: *}]     │
+│     GroupBy: ["name"]                                           │
+│   }                                                             │
+└─────────────────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Planner (planner.go)                                            │
+│   hasAggregateFunction() で集約関数の有無を判定                   │
+│   extractAggregateFunctions() で集約式を抽出                     │
+│   ↓                                                             │
+│   AggregateNode {                                               │
+│     Child: ScanNode/FilterNode                                  │
+│     GroupBy: ["name"]                                           │
+│     Aggregates: [{Function: "COUNT", Column: ""}]               │
+│   }                                                             │
+└─────────────────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Executor (executor.go / aggregate.go)                           │
+│   executeAggregate() で集約処理を実行                            │
+│   - GROUP BY なし: 全行を1グループとして集約                     │
+│   - GROUP BY あり: グループ化して各グループを集約                 │
+│   ↓                                                             │
+│   ResultSet (集約結果)                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 変更ファイル一覧
+
+| ファイル | 変更内容 | 状態 |
+|----------|----------|------|
+| `parser/token.go` | `TOKEN_COUNT`, `TOKEN_SUM`, `TOKEN_AVG`, `TOKEN_MAX`, `TOKEN_MIN` 追加 | ✅ 完了 |
+| `parser/ast.go` | `AggregateFunction` 構造体、`SelectStatement.GroupBy` 追加 | ✅ 完了 |
+| `parser/parser.go` | `parseAggregateFunction()`, `parseGroupBy()`, `isAggregateFunctionToken()` 追加 | ✅ 完了 |
+| `planner/plan_node.go` | `AggregateNode`, `AggregateExpression` 追加 | ✅ 完了 |
+| `planner/planner.go` | `hasAggregateFunction()`, `extractAggregateFunctions()`, ProjectNode との排他制御 | ✅ 完了 |
+| `executor/executor.go` | `executeAggregate()` 呼び出し追加 | ✅ 完了 |
+| `executor/aggregate.go` | 集約処理の実装（COUNT, SUM, AVG, MAX, MIN） | ✅ 完了 |
+| `session/session_test.go` | 集約関数テスト 5 件追加 | ✅ 完了 |
+
+### 実装済みの構造体
+
+#### parser/ast.go - AggregateFunction
+
+```go
+// AggregateFunction は集約関数を表す
+// 例: COUNT(*), SUM(amount), AVG(price)
+type AggregateFunction struct {
+    Function string     // COUNT, SUM, AVG, MAX, MIN
+    Argument Expression // 引数（* または カラム名）
+}
+```
+
+#### parser/ast.go - SelectStatement
+
+```go
+type SelectStatement struct {
+    Columns []Expression    // 選択するカラム（Identifier または AggregateFunction）
+    From    string          // テーブル名
+    Join    *Join           // 結合条件
+    Where   Expression      // 条件
+    GroupBy []string        // GROUP BY カラム ← 追加
+    OrderBy []OrderByClause // ソート条件
+    Limit   *int            // 最大行数
+    Offset  *int            // オフセット
+}
+```
+
+#### planner/plan_node.go - AggregateNode
+
+```go
+// AggregateNode は集約操作を表す
+type AggregateNode struct {
+    Child      PlanNode              // 入力ノード（ScanNode, FilterNode 等）
+    GroupBy    []string              // GROUP BY カラム
+    Aggregates []AggregateExpression // 集約式のリスト
+    schema     *storage.Schema       // 結果スキーマ
+}
+
+// AggregateExpression は個々の集約式を表す
+type AggregateExpression struct {
+    Function string // COUNT, SUM, AVG, MAX, MIN
+    Column   string // 対象カラム名（* の場合は空文字）
+    Alias    string // AS で指定した別名（オプション）
+}
+```
+
+### パース処理の流れ
+
+```sql
+SELECT COUNT(*), name FROM users GROUP BY name
+```
+
+1. **parseSelectColumns()** で `COUNT(*)` を検出
+   - `isAggregateFunctionToken()` が `TOKEN_COUNT` を検出
+   - `parseAggregateFunction()` で `AggregateFunction{Function: "COUNT", Argument: Asterisk{}}` を作成
+
+2. **parseGroupBy()** で `GROUP BY name` を処理
+   - `stmt.GroupBy = ["name"]` に設定
+
+3. **結果の AST**:
+   ```go
+   SelectStatement{
+       Columns: [
+           &AggregateFunction{Function: "COUNT", Argument: &Asterisk{}},
+           &Identifier{Value: "name"},
+       ],
+       From:    "users",
+       GroupBy: []string{"name"},
+   }
+   ```
+
+### プランニング処理の流れ
+
+```go
+// planner.go の planSelect()
+
+// 1. テーブルスキャン
+plan := &ScanNode{TableName: "users", ...}
+
+// 2. WHERE があればフィルタ
+if stmt.Where != nil {
+    plan = &FilterNode{Child: plan, Condition: ...}
+}
+
+// 3. 集約関数があれば AggregateNode を追加
+if hasAggregateFunction(stmt.Columns) {
+    aggregates := extractAggregateFunctions(stmt.Columns)
+    plan = &AggregateNode{
+        Child:      plan,
+        GroupBy:    stmt.GroupBy,       // ["name"]
+        Aggregates: aggregates,          // [{Function: "COUNT", Column: ""}]
+    }
+}
+```
+
+### 実装済み: executor/aggregate.go
+
+```go
+func (e *executor) executeAggregate(node *planner.AggregateNode) (ResultSet, error) {
+    childResult, err := e.Execute(node.Child)
+    if err != nil {
+        return nil, err
+    }
+    rows := childResult.GetRows()
+
+    // GROUP BY がない場合: 全行を1グループとして集約
+    if len(node.GroupBy) == 0 {
+        values := make([]storage.Value, len(node.Aggregates))
+        for i, agg := range node.Aggregates {
+            result, err := e.calculateAggregate(agg, rows, childResult.GetSchema())
+            if err != nil {
+                return nil, err
+            }
+            values[i] = result
+        }
+        resultRow := storage.NewRow(values)
+        return NewResultSetWithRowsAndSchema(node.Schema(), []*storage.Row{resultRow}), nil
+    }
+    // TODO: GROUP BY ありの場合
+    return NewResultSetWithMessage("group by not implemented"), nil
+}
+
+func (e *executor) calculateAggregate(agg planner.AggregateExpression, rows []*storage.Row, schema *storage.Schema) (storage.Value, error) {
+    funcName := strings.ToUpper(agg.Function)
+    switch funcName {
+    case "COUNT":
+        return storage.Int64Value(int64(len(rows))), nil
+    case "SUM":
+        colIdx := schema.GetColumnIndex(agg.Column)
+        if colIdx < 0 {
+            return nil, fmt.Errorf("column not found: %s", agg.Column)
+        }
+        var sum int64
+        for _, row := range rows {
+            val := row.GetValues()[colIdx]
+            sum += int64(val.(storage.Int32Value))
+        }
+        return storage.Int64Value(sum), nil
+    case "AVG":
+        // 実装済み: SUM / COUNT
+    case "MAX":
+        // 実装済み: 最初の行を初期値として最大値を探す
+    case "MIN":
+        // 実装済み: 最初の行を初期値として最小値を探す
+    }
+    return nil, fmt.Errorf("unsupported aggregate function: %s", agg.Function)
+}
+```
+
+### 対応する SQL 例
+
+```sql
+-- GROUP BY なし（全行を集約）✅ 対応済み
+SELECT COUNT(*) FROM users
+SELECT SUM(amount) FROM orders
+SELECT AVG(score) FROM scores
+SELECT MAX(value), MIN(value) FROM values_table
+
+-- WHERE + 集約関数 ✅ 対応済み
+SELECT COUNT(*) FROM products WHERE price > 100
+
+-- GROUP BY あり ⏳ TODO
+SELECT name, COUNT(*) FROM users GROUP BY name
+```
+
+### テスト
+
+```go
+func TestSessionAggregateCount(t *testing.T)     // COUNT(*)
+func TestSessionAggregateSum(t *testing.T)       // SUM(column)
+func TestSessionAggregateAvg(t *testing.T)       // AVG(column)
+func TestSessionAggregateMaxMin(t *testing.T)    // MAX, MIN
+func TestSessionAggregateWithWhere(t *testing.T) // WHERE + COUNT
+```
+
+### 修正内容
+
+1. **planner.go**: 集約関数がある場合は `ProjectNode` を追加しない
+   - `if hasAggregateFunction` と `else if !isSelectAll` の排他制御
+
+2. **aggregate.go**:
+   - `strings.ToUpper(agg.Function)` で関数名を正規化（小文字対応）
+   - `colIdx < 0` のエラーチェック追加
+   - MAX/MIN の初期値を最初の行の値に設定（0 だと負数で失敗）
+
+3. **session_test.go**: 型アサーションを `storage.Int64Value` に修正
+
+### TODO
+
+- [ ] GROUP BY ありの集約処理（`groupRows()` の実装）
+
 ## 次のステップ
 
-Step 9 以降: 集約関数（GROUP BY, COUNT, SUM）、コスト計算、最適化の実装。
+Step 10 以降: コスト計算、最適化の実装。
 
-または、スキーマ永続化を先に実装する場合は別途計画が必要。
+または、GROUP BY の完全実装を先に行う場合は別途対応が必要。
