@@ -1355,3 +1355,26 @@ func TestSessionAggregateWithWhere(t *testing.T) // WHERE + COUNT
 Step 10 以降: コスト計算、最適化の実装。
 
 または、GROUP BY の完全実装を先に行う場合は別途対応が必要。
+
+---
+
+## セッションメモ (2025-12-21)
+
+### 議論した内容
+
+1. **Step 10: cost.go の実装方針**
+   - コストモデルの種類を説明（I/O コスト、CPU コスト、統合コスト、サンプリングベース）
+   - PostgreSQL の例: `Total Cost = seq_page_cost × pages + cpu_tuple_cost × rows`
+   - このプロジェクトでは行数ベースのシンプルなモデルを提案
+
+2. **recovery.go の UNDO/REDO 処理**
+   - 現状: WAL にログを追記するだけで、実際のデータベース操作は未実装
+   - 必要な修正: `RecoveryManager` に `Catalog` を追加し、実際のテーブル操作を行う
+   - 依存関係: `Table.Update()` / `Table.Delete()` の実装が先に必要
+
+### 残タスク
+
+- [ ] Step 10: cost.go（コスト計算）
+- [ ] Step 11: optimizer.go（クエリ最適化）
+- [ ] GROUP BY ありの集約処理
+- [ ] recovery.go の実データ操作（Phase 4 の続き）
