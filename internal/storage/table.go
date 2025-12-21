@@ -37,6 +37,19 @@ func (t *Table) GetName() TableName {
 	return t.name
 }
 
+// GetRowCost はテーブルスキャン時の推定行数（コスト見積もり用）を返す。
+// 現状は正確な統計情報を持っていないため、簡易的に全行をスキャンして数える。
+// TODO: 将来的にはカタログに統計情報（行数、ヒストグラム等）を保持して高速化する。
+func (t *Table) GetRowCost() int {
+	rows, err := t.Scan()
+	if err != nil {
+		// コスト推定が失敗しても実行計画生成を完全に止めないため、0扱いにする。
+		// （呼び出し側でエラーとして扱いたい場合はAPI設計を見直す）
+		return 0
+	}
+	return len(rows)
+}
+
 func (t *Table) Insert(row *Row) error {
 	rowData := row.Encode()
 
