@@ -2,9 +2,11 @@ package session
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/takeuchi-shogo/go-example-database/internal/catalog"
+	"github.com/takeuchi-shogo/go-example-database/internal/dbtxn"
 	"github.com/takeuchi-shogo/go-example-database/internal/executor"
 	"github.com/takeuchi-shogo/go-example-database/internal/storage"
 )
@@ -23,10 +25,19 @@ func setupTestSession(t *testing.T) (Session, func()) {
 		t.Fatalf("Failed to create catalog: %v", err)
 	}
 
-	exec := executor.NewExecutor(cat)
-	sess := NewSession(cat, exec)
+	// WAL を作成
+	walPath := filepath.Join(tempDir, "wal.log")
+	wal, err := dbtxn.NewWAL(walPath)
+	if err != nil {
+		os.RemoveAll(tempDir)
+		t.Fatalf("Failed to create WAL: %v", err)
+	}
+
+	exec := executor.NewExecutor(cat, wal)
+	sess := NewSession(cat, exec, wal)
 
 	cleanup := func() {
+		wal.Close()
 		sess.Close()
 		os.RemoveAll(tempDir)
 	}
@@ -611,5 +622,129 @@ func TestSessionAggregateWithWhere(t *testing.T) {
 	// price > 100 は 150, 200 の2件
 	if int64(count) != 2 {
 		t.Errorf("Expected COUNT(*) WHERE price > 100 = 2, got %d", int64(count))
+	}
+}
+
+func TestSessionBeginCommit(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// テーブル作成
+	_, err := sess.Execute("CREATE TABLE users (id INT, name VARCHAR(255))")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// BEGIN
+	result, err := sess.Execute("BEGIN")
+	if err != nil {
+		t.Fatalf("BEGIN failed: %v", err)
+	}
+	if result.GetMessage() != "BEGIN transaction successfully" {
+		t.Errorf("Expected 'BEGIN transaction successfully', got '%s'", result.GetMessage())
+	}
+
+	// INSERT（トランザクション内）
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (1, 'alice')")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+
+	// COMMIT
+	result, err = sess.Execute("COMMIT")
+	if err != nil {
+		t.Fatalf("COMMIT failed: %v", err)
+	}
+	if result.GetMessage() != "COMMIT transaction successfully" {
+		t.Errorf("Expected 'COMMIT transaction successfully', got '%s'", result.GetMessage())
+	}
+
+	// データが保存されているか確認
+	result, err = sess.Execute("SELECT * FROM users")
+	if err != nil {
+		t.Fatalf("SELECT failed: %v", err)
+	}
+	if result.GetRowCount() != 1 {
+		t.Errorf("Expected 1 row, got %d", result.GetRowCount())
+	}
+}
+
+func TestSessionBeginRollback(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// テーブル作成
+	_, err := sess.Execute("CREATE TABLE users (id INT, name VARCHAR(255))")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// BEGIN
+	_, err = sess.Execute("BEGIN")
+	if err != nil {
+		t.Fatalf("BEGIN failed: %v", err)
+	}
+
+	// INSERT（トランザクション内）
+	_, err = sess.Execute("INSERT INTO users (id, name) VALUES (1, 'alice')")
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+
+	// ROLLBACK
+	result, err := sess.Execute("ROLLBACK")
+	if err != nil {
+		t.Fatalf("ROLLBACK failed: %v", err)
+	}
+	if result.GetMessage() != "ROLLBACK transaction successfully" {
+		t.Errorf("Expected 'ROLLBACK transaction successfully', got '%s'", result.GetMessage())
+	}
+}
+
+func TestSessionDoubleBegin(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// 1回目の BEGIN
+	_, err := sess.Execute("BEGIN")
+	if err != nil {
+		t.Fatalf("BEGIN failed: %v", err)
+	}
+
+	// 2回目の BEGIN（エラーになるはず）
+	_, err = sess.Execute("BEGIN")
+	if err == nil {
+		t.Fatal("Expected error for double BEGIN")
+	}
+	if err.Error() != "transaction already started" {
+		t.Errorf("Expected 'transaction already started', got '%s'", err.Error())
+	}
+}
+
+func TestSessionCommitWithoutBegin(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// BEGIN なしで COMMIT
+	_, err := sess.Execute("COMMIT")
+	if err == nil {
+		t.Fatal("Expected error for COMMIT without BEGIN")
+	}
+	if err.Error() != "no transaction to commit" {
+		t.Errorf("Expected 'no transaction to commit', got '%s'", err.Error())
+	}
+}
+
+func TestSessionRollbackWithoutBegin(t *testing.T) {
+	sess, cleanup := setupTestSession(t)
+	defer cleanup()
+
+	// BEGIN なしで ROLLBACK
+	_, err := sess.Execute("ROLLBACK")
+	if err == nil {
+		t.Fatal("Expected error for ROLLBACK without BEGIN")
+	}
+	if err.Error() != "no transaction to rollback" {
+		t.Errorf("Expected 'no transaction to rollback', got '%s'", err.Error())
 	}
 }

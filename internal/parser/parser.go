@@ -77,6 +77,12 @@ func (p *parser) Parse() (Statement, error) {
 		return p.parseCreateTableStatement()
 	case TOKEN_EXPLAIN:
 		return p.parseExplainStatement()
+	case TOKEN_BEGIN:
+		return p.parseBeginStatement()
+	case TOKEN_COMMIT:
+		return p.parseCommitStatement()
+	case TOKEN_ROLLBACK:
+		return p.parseRollbackStatement()
 	default:
 		return nil, fmt.Errorf("unexpected token: %d", p.currentToken.tokenType)
 	}
@@ -586,4 +592,19 @@ func (p *parser) parseGroupBy() ([]string, error) {
 		p.nextToken() // COMMA へ
 	}
 	return columns, nil
+}
+
+func (p *parser) parseBeginStatement() (*BeginStatement, error) {
+	stmt := &BeginStatement{}
+	return stmt, nil
+}
+
+func (p *parser) parseCommitStatement() (*CommitStatement, error) {
+	stmt := &CommitStatement{}
+	return stmt, nil
+}
+
+func (p *parser) parseRollbackStatement() (*RollbackStatement, error) {
+	stmt := &RollbackStatement{}
+	return stmt, nil
 }

@@ -4,20 +4,28 @@ import (
 	"fmt"
 
 	internalcatalog "github.com/takeuchi-shogo/go-example-database/internal/catalog"
+	"github.com/takeuchi-shogo/go-example-database/internal/dbtxn"
 	"github.com/takeuchi-shogo/go-example-database/internal/planner"
 	"github.com/takeuchi-shogo/go-example-database/internal/storage"
 )
 
 type Executor interface {
 	Execute(plan planner.PlanNode) (ResultSet, error)
+	SetTxnID(txnID uint64) // トランザクション ID 設定
 }
 
 type executor struct {
 	catalog internalcatalog.Catalog
+	wal     *dbtxn.WAL
+	txnID   uint64
 }
 
-func NewExecutor(c internalcatalog.Catalog) Executor {
-	return &executor{catalog: c}
+func NewExecutor(c internalcatalog.Catalog, wal *dbtxn.WAL) Executor {
+	return &executor{catalog: c, wal: wal, txnID: 0}
+}
+
+func (e *executor) SetTxnID(txnID uint64) {
+	e.txnID = txnID
 }
 
 // Execute は PlanNode を実行して結果を返す
@@ -125,6 +133,16 @@ func (e *executor) executeInsert(node *planner.InsertNode) (ResultSet, error) {
 		}
 	}
 	row := storage.NewRow(values)
+	// wal に先行書き込み（write-ahead log）
+	if e.wal != nil {
+		rowBytes, err := row.Serialize()
+		if err != nil {
+			return nil, err
+		}
+		if err := e.wal.LogInsert(e.txnID, node.TableName, 0, nil, rowBytes); err != nil {
+			return nil, err
+		}
+	}
 	err = table.Insert(row)
 	if err != nil {
 		return NewResultSetWithMessage(fmt.Sprintf("error inserting into table: %s", err.Error())), err

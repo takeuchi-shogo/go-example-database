@@ -1,7 +1,13 @@
 package dbtxn
 
+import (
+	"github.com/takeuchi-shogo/go-example-database/internal/catalog"
+	"github.com/takeuchi-shogo/go-example-database/internal/storage"
+)
+
 type RecoveryManager struct {
-	wal *WAL
+	wal     *WAL
+	catalog catalog.Catalog
 }
 
 type TxnStatus struct {
@@ -10,9 +16,10 @@ type TxnStatus struct {
 	Records []LogRecord
 }
 
-func NewRecoveryManager(wal *WAL) *RecoveryManager {
+func NewRecoveryManager(wal *WAL, catalog catalog.Catalog) *RecoveryManager {
 	return &RecoveryManager{
-		wal: wal,
+		wal:     wal,
+		catalog: catalog,
 	}
 }
 
@@ -69,6 +76,10 @@ func (rm *RecoveryManager) analyzeTransactions(records []LogRecord) map[uint64]*
 
 // redo は REDO 処理を行う
 func (rm *RecoveryManager) redo(txnMap map[uint64]*TxnStatus) error {
+	// catalog が nil の場合は REDO をスキップ
+	if rm.catalog == nil {
+		return nil
+	}
 	for _, status := range txnMap {
 		if status.State != TxnStateCommitted {
 			continue
@@ -77,14 +88,27 @@ func (rm *RecoveryManager) redo(txnMap map[uint64]*TxnStatus) error {
 			switch record.LogType {
 			case LogInsert:
 				// After を Before に、Before を After に変換
-				// TODO: データベースに対して INSERT 操作を行う
-				rm.wal.LogInsert(record.TxnID, record.TableName, record.RowID, record.Before, record.After)
+				// データベースに対して INSERT 操作を行う
+				table, err := rm.catalog.GetTable(record.TableName)
+				if err != nil {
+					return err
+				}
+				schema, err := rm.catalog.GetSchema(record.TableName)
+				if err != nil {
+					return err
+				}
+				row, err := storage.DecodeRow(record.After, schema)
+				if err != nil {
+					return err
+				}
+				err = table.Insert(row)
+				if err != nil {
+					return err
+				}
 			case LogUpdate:
-				// TODO: データベースに対して UPDATE 操作を行う
-				rm.wal.LogUpdate(record.TxnID, record.TableName, record.RowID, record.Before, record.After)
+				// TODO: UPDATE 操作の実装後に追加
 			case LogDelete:
-				// TODO: データベースに対して DELETE 操作を行う
-				rm.wal.LogDelete(record.TxnID, record.TableName, record.RowID, record.Before)
+				// TODO: DELETE 操作の実装後に追加
 			}
 		}
 	}

@@ -3,7 +3,18 @@
 */
 package storage
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"encoding/gob"
+)
+
+func init() {
+	// gob でインターフェース型をシリアライズするために型を登録
+	gob.Register(Int32Value(0))
+	gob.Register(Int64Value(0))
+	gob.Register(StringValue(""))
+	gob.Register(BoolValue(false))
+}
 
 type ColumnType int
 

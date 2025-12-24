@@ -1,25 +1,33 @@
 package executor
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/takeuchi-shogo/go-example-database/internal/catalog"
+	"github.com/takeuchi-shogo/go-example-database/internal/dbtxn"
 	"github.com/takeuchi-shogo/go-example-database/internal/planner"
 	"github.com/takeuchi-shogo/go-example-database/internal/storage"
 )
 
-func setupTestEnvironment(t *testing.T) (catalog.Catalog, Executor) {
+func setupTestEnvironment(t *testing.T) (catalog.Catalog, Executor, *dbtxn.WAL) {
 	tempDir := t.TempDir()
 	cat, err := catalog.NewCatalog(tempDir)
 	if err != nil {
 		t.Fatalf("Failed to create catalog: %v", err)
 	}
-	exec := NewExecutor(cat)
-	return cat, exec
+	walPath := filepath.Join(tempDir, "wal.log")
+	wal, err := dbtxn.NewWAL(walPath)
+	if err != nil {
+		t.Fatalf("Failed to create WAL: %v", err)
+	}
+	exec := NewExecutor(cat, wal)
+	return cat, exec, wal
 }
 
 func TestExecuteCreateTable(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	// CreateTableNode を作成
@@ -49,7 +57,8 @@ func TestExecuteCreateTable(t *testing.T) {
 }
 
 func TestExecuteScan(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	// テーブルを作成
@@ -84,7 +93,8 @@ func TestExecuteScan(t *testing.T) {
 }
 
 func TestExecuteFilter(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	// テーブルを作成
@@ -128,7 +138,8 @@ func TestExecuteFilter(t *testing.T) {
 }
 
 func TestExecuteProject(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	// テーブルを作成
@@ -180,7 +191,8 @@ func TestExecuteProject(t *testing.T) {
 }
 
 func TestExecuteInsert(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	// テーブルを作成
@@ -222,7 +234,8 @@ func TestExecuteInsert(t *testing.T) {
 }
 
 func TestExecuteUpdateNotImplemented(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	updateNode := &planner.UpdateNode{
@@ -241,7 +254,8 @@ func TestExecuteUpdateNotImplemented(t *testing.T) {
 }
 
 func TestExecuteDeleteNotImplemented(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	deleteNode := &planner.DeleteNode{
@@ -259,7 +273,8 @@ func TestExecuteDeleteNotImplemented(t *testing.T) {
 }
 
 func TestExecuteTableNotFound(t *testing.T) {
-	cat, exec := setupTestEnvironment(t)
+	cat, exec, wal := setupTestEnvironment(t)
+	defer wal.Close()
 	defer cat.Close()
 
 	// 存在しないテーブルをスキャン

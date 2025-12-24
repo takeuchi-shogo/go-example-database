@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrTableNotFound = errors.New("table not found")
 	ErrTableFull     = errors.New("table is full")
+	ErrRowNotFound   = errors.New("row not found")
 )
 
 type (
@@ -26,11 +27,61 @@ type Table struct {
 	schema *Schema
 	pager  *Pager
 	// 現在のページ数
-	numPages NumPages
+	numPages  NumPages
+	nextRowID int64                 // 次の行ID
+	rowIndex  map[int64]RowLocation // 行IDから行位置のインデックス
 }
 
 func NewTable(name TableName, schema *Schema, pager *Pager) *Table {
-	return &Table{name: name, schema: schema, pager: pager, numPages: NumPages(pager.GetNumPages())}
+	t := &Table{
+		name:      name,
+		schema:    schema,
+		pager:     pager,
+		numPages:  NumPages(pager.GetNumPages()),
+		nextRowID: 1,
+		rowIndex:  make(map[int64]RowLocation),
+	}
+	// 既存のデータを読み込んでインデックスを再構築
+	t.rebuildIndex()
+	return t
+}
+
+// rebuildIndex はインデックスを再構築する
+func (t *Table) rebuildIndex() error {
+	t.rowIndex = make(map[int64]RowLocation)
+	maxRowID := int64(0)
+	for i := 0; i < int(t.numPages); i++ {
+		page, err := t.getPage(PageID(i))
+		if err != nil {
+			return err
+		}
+		for j := 0; j < int(page.rowCount()); j++ {
+			rowData, err := page.GetRow(uint16(j))
+			if err == ErrSlotDeleted {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			row, err := DecodeRow(rowData, t.schema)
+			if err != nil {
+				return err
+			}
+			rowID := row.GetRowID()
+			// インデックスに追加
+			t.rowIndex[rowID] = RowLocation{
+				PageID(i),
+				int64(j),
+			}
+			// 最大行IDを更新
+			if rowID > maxRowID {
+				maxRowID = rowID
+			}
+		}
+	}
+	// 次の行IDを更新
+	t.nextRowID = maxRowID + 1
+	return nil
 }
 
 func (t *Table) GetName() TableName {
@@ -51,17 +102,36 @@ func (t *Table) GetRowCost() int {
 }
 
 func (t *Table) Insert(row *Row) error {
+	// 行IDが指定されていない場合は、次の行IDを使用
+	if row.GetRowID() == 0 {
+		row.SetRowID(t.nextRowID)
+		t.nextRowID++
+	} else {
+		// 行IDが指定されている場合は、その行IDが次の行IDより大きい場合は更新
+		if row.GetRowID() >= t.nextRowID {
+			t.nextRowID = row.GetRowID() + 1
+		}
+	}
 	rowData := row.Encode()
+
+	pageID := PageID(0)
 
 	if t.numPages > 0 {
 		page, err := t.getPage((t.numPages - 1).ToPageID())
 		if err != nil {
 			return err
 		}
-		_, err = page.InsertRow(rowData)
+		slotID, err := page.InsertRow(rowData)
 		if err == nil {
-			// 挿入成功、ページを保存
-			return t.savePage((t.numPages - 1).ToPageID(), page)
+			pageID = (t.numPages - 1).ToPageID()
+			if err := t.savePage(pageID, page); err != nil {
+				return err
+			}
+			t.rowIndex[row.GetRowID()] = RowLocation{
+				pageID: pageID,
+				rowID:  int64(slotID),
+			}
+			return nil
 		}
 		if err != ErrPageFull {
 			// ErrPageFull 以外のエラー
@@ -71,15 +141,22 @@ func (t *Table) Insert(row *Row) error {
 	}
 	// 新しいページを作成
 	page := NewSlottedPage()
-	_, err := page.InsertRow(rowData)
+	slotID, err := page.InsertRow(rowData)
 	if err != nil {
 		return err
 	}
 
 	// ページを保存
-	pageID := t.numPages
+	pageID = t.numPages.ToPageID()
 	t.numPages++
-	return t.savePage(pageID.ToPageID(), page)
+	if err := t.savePage(pageID, page); err != nil {
+		return err
+	}
+	t.rowIndex[row.GetRowID()] = RowLocation{
+		pageID: pageID,
+		rowID:  int64(slotID),
+	}
+	return nil
 }
 
 func (t *Table) getPage(pageID PageID) (*SlottedPage, error) {
@@ -108,6 +185,9 @@ func (t *Table) Scan() ([]*Row, error) {
 		}
 		for j := 0; j < int(page.rowCount()); j++ {
 			rowData, err := page.GetRow(uint16(j))
+			if err == ErrSlotDeleted {
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -121,7 +201,137 @@ func (t *Table) Scan() ([]*Row, error) {
 	return rows, nil
 }
 
+// Update は行を更新する
+func (t *Table) Update(rowID int64, row *Row) (*Row, error) {
+	location, exists := t.rowIndex[rowID]
+	if !exists {
+		return nil, ErrRowNotFound
+	}
+	page, err := t.getPage(location.pageID)
+	if err != nil {
+		return nil, err
+	}
+	oldRowData, err := page.GetRow(uint16(location.rowID))
+	if err != nil {
+		return nil, err
+	}
+	oldRow, err := DecodeRow(oldRowData, t.schema)
+	if err != nil {
+		return nil, err
+	}
+	row.SetRowID(rowID)
+	newData := row.Encode()
+	// スロットを更新
+	// 簡易実装: 削除 -> 再挿入
+	if err := page.DeleteRow(uint16(location.rowID)); err != nil {
+		return nil, err
+	}
+	// 同じページに再挿入
+	newSlotID, err := page.InsertRow(newData)
+	if err == ErrPageFull {
+		if err := t.savePage(location.pageID, page); err != nil {
+			return nil, err
+		}
+		// 新しいページを作成
+		page = NewSlottedPage()
+		newSlotID, err = page.InsertRow(newData)
+		if err != nil {
+			return nil, err
+		}
+		pageID := t.numPages.ToPageID()
+		t.numPages++
+		if err := t.savePage(pageID, page); err != nil {
+			return nil, err
+		}
+		t.rowIndex[rowID] = RowLocation{
+			pageID: pageID,
+			rowID:  int64(newSlotID),
+		}
+	} else if err != nil {
+		return nil, err
+	} else {
+		if err := t.savePage(location.pageID, page); err != nil {
+			return nil, err
+		}
+		t.rowIndex[rowID] = RowLocation{
+			pageID: location.pageID,
+			rowID:  int64(newSlotID),
+		}
+	}
+	return oldRow, nil
+}
+
+// Delete は行を削除する
+func (t *Table) Delete(rowID int64) (*Row, error) {
+	location, exists := t.rowIndex[rowID]
+	if !exists {
+		return nil, ErrRowNotFound
+	}
+	page, err := t.getPage(location.pageID)
+	if err != nil {
+		return nil, err
+	}
+	// 古いデータを取得
+	oldRowData, err := page.GetRow(uint16(location.rowID))
+	if err != nil {
+		return nil, err
+	}
+	oldRow, err := DecodeRow(oldRowData, t.schema)
+	if err != nil {
+		return nil, err
+	}
+	// スロットを削除
+	if err := page.DeleteRow(uint16(location.rowID)); err != nil {
+		return nil, err
+	}
+	// ページを保存
+	if err := t.savePage(location.pageID, page); err != nil {
+		return nil, err
+	}
+	// インデックスを更新
+	delete(t.rowIndex, rowID)
+	return oldRow, nil
+}
+
+func (t *Table) FindByRowID(rowID int64) (*Row, error) {
+	location, exists := t.rowIndex[rowID]
+	if !exists {
+		return nil, ErrRowNotFound
+	}
+	page, err := t.getPage(location.pageID)
+	if err != nil {
+		return nil, err
+	}
+	rowData, err := page.GetRow(uint16(location.rowID))
+	if err != nil {
+		return nil, err
+	}
+	return DecodeRow(rowData, t.schema)
+}
+
 // Close はテーブルを閉じる
 func (t *Table) Close() error {
 	return t.pager.Close()
+}
+
+type RowLocation struct {
+	pageID PageID
+	rowID  int64
+}
+
+func (r *RowLocation) GetPageID() PageID {
+	return r.pageID
+}
+
+func (r *RowLocation) GetRowID() int64 {
+	return r.rowID
+}
+
+// setter
+func (r *RowLocation) SetPageID(pageID PageID) {
+	r.pageID = pageID
+}
+
+func (r *RowLocation) SetRowID(rowID int64) {
+	r.rowID = rowID
 }
