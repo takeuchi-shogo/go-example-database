@@ -151,15 +151,110 @@ func (e *executor) executeInsert(node *planner.InsertNode) (ResultSet, error) {
 }
 
 // executeUpdate は UPDATE 文を実行して結果を返す
-// TODO: 未実装
 func (e *executor) executeUpdate(node *planner.UpdateNode) (ResultSet, error) {
-	return NewResultSetWithMessage(fmt.Sprintf("update not implemented: %s", node.TableName)), nil
+	// 1. テーブルとスキーマを取得
+	table, err := e.catalog.GetTable(node.TableName)
+	if err != nil {
+		return nil, err
+	}
+	schema, err := e.catalog.GetSchema(node.TableName)
+	if err != nil {
+		return nil, err
+	}
+	// 2. 子ノードを実行して対象行を取得
+	childResult, err := e.Execute(node.Child)
+	if err != nil {
+		return nil, err
+	}
+	// 3. カラム名 ⇨ インデックスのマップを作成
+	columnIndexMap := make(map[string]int)
+	for i, col := range schema.GetColumns() {
+		columnIndexMap[col.GetName()] = i
+	}
+	// 4. 更新する行を取得
+	var updateCount int
+	for _, row := range childResult.GetRows() {
+		rowID := row.GetRowID()
+		// before deserialize data
+		beforeBytes, err := row.Serialize()
+		if err != nil {
+			return nil, err
+		}
+		// SET 式を評価して新しい値を作成
+		newValues := make([]storage.Value, len(schema.GetColumns()))
+		// 既存の値をコピー
+		copy(newValues, row.GetValues())
+		for colName, expr := range node.Sets {
+			idx, ok := columnIndexMap[colName]
+			if !ok {
+				return nil, fmt.Errorf("column not found: %s", colName)
+			}
+			value, err := expr.Evaluate(row, schema)
+			if err != nil {
+				return nil, err
+			}
+			storageValue, err := toStorageValue(value)
+			if err != nil {
+				return nil, err
+			}
+			newValues[idx] = storageValue
+		}
+		newRow := storage.NewRowWithID(rowID, newValues)
+		// After deserialize data
+		afterBytes, err := newRow.Serialize()
+		if err != nil {
+			return nil, err
+		}
+		// WAL に先行書き込み
+		if e.wal != nil {
+			if err := e.wal.LogUpdate(e.txnID, node.TableName, uint64(rowID), beforeBytes, afterBytes); err != nil {
+				return nil, err
+			}
+		}
+		// 行を更新
+		_, err = table.Update(rowID, newRow)
+		if err != nil {
+			return nil, err
+		}
+		updateCount++
+	}
+	return NewResultSetWithMessage(fmt.Sprintf("updated %d rows in %s", updateCount, node.TableName)), nil
 }
 
 // executeDelete は DELETE 文を実行して結果を返す
-// TODO: 未実装
 func (e *executor) executeDelete(node *planner.DeleteNode) (ResultSet, error) {
-	return NewResultSetWithMessage(fmt.Sprintf("delete not implemented: %s", node.TableName)), nil
+	// 1. テーブルとスキーマを取得
+	table, err := e.catalog.GetTable(node.TableName)
+	if err != nil {
+		return nil, err
+	}
+	// 2. 子ノードを実行して対象行を取得
+	childResult, err := e.Execute(node.Child)
+	if err != nil {
+		return nil, err
+	}
+	// 3. 各行を削除
+	var deleteCount int
+	for _, row := range childResult.GetRows() {
+		rowID := row.GetRowID()
+		// before deserialize data
+		beforeBytes, err := row.Serialize()
+		if err != nil {
+			return nil, err
+		}
+		// WAL に先行書き込み
+		if e.wal != nil {
+			if err := e.wal.LogDelete(e.txnID, node.TableName, uint64(rowID), beforeBytes); err != nil {
+				return nil, err
+			}
+		}
+		// 行を削除
+		if _, err = table.Delete(rowID); err != nil {
+			return nil, err
+		}
+		deleteCount++
+	}
+	return NewResultSetWithMessage(fmt.Sprintf("deleted %d rows in %s", deleteCount, node.TableName)), nil
 }
 
 // executeCreateTable は CREATE TABLE 文を実行して結果を返す
