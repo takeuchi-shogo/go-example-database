@@ -118,3 +118,15 @@ type AggregateFunction struct {
 	Function string     // COUNT, SUM, AVG, MAX, MIN
 	Argument Expression // 引数
 }
+
+// BeginStatement はBEGIN文を表す
+type BeginStatement struct {
+}
+
+// CommitStatement はCOMMIT文を表す
+type CommitStatement struct {
+}
+
+// RollbackStatement はROLLBACK文を表す
+type RollbackStatement struct {
+}

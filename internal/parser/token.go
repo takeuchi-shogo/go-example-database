@@ -29,6 +29,10 @@ const (
 	TOKEN_SET    // SET
 	TOKEN_VALUES // VALUES
 	TOKEN_INTO   // INTO
+	// キーワード(トランザクション)
+	TOKEN_BEGIN    // BEGIN
+	TOKEN_COMMIT   // COMMIT
+	TOKEN_ROLLBACK // ROLLBACK
 	// キーワード(DDL)
 	TOKEN_CREATE  // CREATE
 	TOKEN_DROP    // DROP
@@ -95,6 +99,10 @@ var keywords = map[string]TokenType{
 	"SET":    TOKEN_SET,
 	"VALUES": TOKEN_VALUES,
 	"INTO":   TOKEN_INTO,
+	// transaction
+	"BEGIN":    TOKEN_BEGIN,
+	"COMMIT":   TOKEN_COMMIT,
+	"ROLLBACK": TOKEN_ROLLBACK,
 	// DDL
 	"CREATE":  TOKEN_CREATE,
 	"DROP":    TOKEN_DROP,
@@ -107,6 +115,7 @@ var keywords = map[string]TokenType{
 	"AVG":   TOKEN_AVG,
 	"MAX":   TOKEN_MAX,
 	"MIN":   TOKEN_MIN,
+
 	// 修飾子・句
 	"AND":     TOKEN_AND,
 	"OR":      TOKEN_OR,

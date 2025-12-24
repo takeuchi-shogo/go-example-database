@@ -13,7 +13,7 @@ func TestRecoveryNoLogs(t *testing.T) {
 	wal, _ := NewWAL(path)
 	defer wal.Close()
 
-	rm := NewRecoveryManager(wal)
+	rm := NewRecoveryManager(wal, nil)
 
 	if err := rm.Recover(); err != nil {
 		t.Fatalf("Recover failed: %v", err)
@@ -38,7 +38,7 @@ func TestRecoveryCommittedTxn(t *testing.T) {
 	wal2, _ := NewWAL(path)
 	defer wal2.Close()
 
-	rm := NewRecoveryManager(wal2)
+	rm := NewRecoveryManager(wal2, nil)
 
 	if err := rm.Recover(); err != nil {
 		t.Fatalf("Recover failed: %v", err)
@@ -64,7 +64,7 @@ func TestRecoveryUncommittedTxn(t *testing.T) {
 	wal2, _ := NewWAL(path)
 	defer wal2.Close()
 
-	rm := NewRecoveryManager(wal2)
+	rm := NewRecoveryManager(wal2, nil)
 
 	if err := rm.Recover(); err != nil {
 		t.Fatalf("Recover failed: %v", err)
@@ -108,7 +108,7 @@ func TestAnalyzeTransactions(t *testing.T) {
 
 	wal.Flush()
 
-	rm := NewRecoveryManager(wal)
+	rm := NewRecoveryManager(wal, nil)
 	records, _ := wal.Read()
 	txnMap := rm.analyzeTransactions(records)
 
