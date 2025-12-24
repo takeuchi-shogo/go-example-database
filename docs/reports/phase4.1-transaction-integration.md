@@ -263,15 +263,107 @@ func (r *Row) Encode() []byte {
 | TestDecodeRowWithRowID | RowID を含む Decode |
 | TestRowSerializeDeserialize | gob シリアライズで RowID が保持される |
 
+### Step 5: executeUpdate + WAL 統合
+
+UPDATE 文の実行と WAL 統合を実装しました。
+
+**変更ファイル:** `internal/executor/executor.go`
+
+```go
+func (e *executor) executeUpdate(node *planner.UpdateNode) (ResultSet, error) {
+    // 1. テーブルとスキーマを取得
+    table, err := e.catalog.GetTable(node.TableName)
+    schema, err := e.catalog.GetSchema(node.TableName)
+
+    // 2. 子ノードを実行して対象行を取得
+    childResult, err := e.Execute(node.Child)
+
+    // 3. カラム名 → インデックスのマップを作成
+    columnIndexMap := make(map[string]int)
+    for i, col := range schema.GetColumns() {
+        columnIndexMap[col.GetName()] = i
+    }
+
+    // 4. 各行を更新
+    for _, row := range childResult.GetRows() {
+        rowID := row.GetRowID()
+        beforeBytes, _ := row.Serialize()
+
+        // SET 式を評価して新しい値を作成
+        newValues := make([]storage.Value, len(schema.GetColumns()))
+        copy(newValues, row.GetValues())
+        for colName, expr := range node.Sets {
+            idx := columnIndexMap[colName]
+            value, _ := expr.Evaluate(row, schema)
+            newValues[idx], _ = toStorageValue(value)
+        }
+        newRow := storage.NewRowWithID(rowID, newValues)
+        afterBytes, _ := newRow.Serialize()
+
+        // WAL に先行書き込み
+        if e.wal != nil {
+            e.wal.LogUpdate(e.txnID, node.TableName, uint64(rowID), beforeBytes, afterBytes)
+        }
+
+        // テーブルを更新
+        table.Update(rowID, newRow)
+    }
+    return NewResultSetWithMessage("updated X rows"), nil
+}
+```
+
+#### テスト追加
+
+| テスト | 内容 |
+|--------|------|
+| TestExecuteUpdate | INSERT → UPDATE → 値の確認 |
+
+### Step 6: executeDelete + WAL 統合
+
+DELETE 文の実行と WAL 統合を実装しました。
+
+**変更ファイル:** `internal/executor/executor.go`
+
+```go
+func (e *executor) executeDelete(node *planner.DeleteNode) (ResultSet, error) {
+    // 1. テーブルを取得
+    table, err := e.catalog.GetTable(node.TableName)
+
+    // 2. 子ノードを実行して対象行を取得
+    childResult, err := e.Execute(node.Child)
+
+    // 3. 各行を削除
+    for _, row := range childResult.GetRows() {
+        rowID := row.GetRowID()
+        beforeBytes, _ := row.Serialize()
+
+        // WAL に先行書き込み
+        if e.wal != nil {
+            e.wal.LogDelete(e.txnID, node.TableName, uint64(rowID), beforeBytes)
+        }
+
+        // 行を削除
+        table.Delete(rowID)
+    }
+    return NewResultSetWithMessage("deleted X rows"), nil
+}
+```
+
+#### テスト追加
+
+| テスト | 内容 |
+|--------|------|
+| TestExecuteDelete | INSERT → DELETE → 行数確認 |
+
 ## 残作業
 
 | 項目 | 状態 |
 |------|------|
-| Executor の executeUpdate 実装 | 未実装 |
-| Executor の executeDelete 実装 | 未実装 |
-| UPDATE の WAL 統合 | 未実装 |
-| DELETE の WAL 統合 | 未実装 |
-| Recovery REDO/UNDO の実装 | 未実装 |
+| Executor の executeUpdate 実装 | ✓ 完了 |
+| Executor の executeDelete 実装 | ✓ 完了 |
+| UPDATE の WAL 統合 | ✓ 完了 |
+| DELETE の WAL 統合 | ✓ 完了 |
+| Recovery REDO/UNDO の UPDATE/DELETE 対応 | 未実装 |
 
 ## 学んだこと
 

@@ -233,42 +233,135 @@ func TestExecuteInsert(t *testing.T) {
 	}
 }
 
-func TestExecuteUpdateNotImplemented(t *testing.T) {
+func TestExecuteUpdate(t *testing.T) {
 	cat, exec, wal := setupTestEnvironment(t)
 	defer wal.Close()
 	defer cat.Close()
 
+	// 1. テーブルを作成
+	columns := []storage.Column{
+		*storage.NewColumn("id", storage.ColumnTypeInt32, 0, false),
+		*storage.NewColumn("name", storage.ColumnTypeString, 255, false),
+	}
+	schema := storage.NewSchema("users", columns)
+	createNode := &planner.CreateTableNode{
+		TableName:   "users",
+		TableSchema: schema,
+	}
+	_, err := exec.Execute(createNode)
+	if err != nil {
+		t.Fatalf("Failed to create table: %v", err)
+	}
+
+	// 2. 行を挿入
+	insertNode := &planner.InsertNode{
+		TableName: "users",
+		Columns:   []string{"id", "name"},
+		Values: []planner.Expression{
+			&planner.Literal{Value: 1},
+			&planner.Literal{Value: "Alice"},
+		},
+	}
+	_, err = exec.Execute(insertNode)
+	if err != nil {
+		t.Fatalf("Failed to insert: %v", err)
+	}
+
+	// 3. UPDATE を実行
 	updateNode := &planner.UpdateNode{
 		TableName: "users",
+		Sets: map[string]planner.Expression{
+			"name": &planner.Literal{Value: "Bob"},
+		},
+		Child: &planner.ScanNode{
+			TableName:   "users",
+			TableSchema: schema,
+		},
 	}
-
 	result, err := exec.Execute(updateNode)
 	if err != nil {
-		t.Fatalf("Execute should not return error for unimplemented: %v", err)
+		t.Fatalf("Execute failed: %v", err)
 	}
 
-	// メッセージが含まれているか確認
 	if result == nil {
 		t.Fatal("Result should not be nil")
+	}
+
+	// 4. 更新されたか確認
+	table, _ := cat.GetTable("users")
+	rows, _ := table.Scan()
+	if len(rows) != 1 {
+		t.Fatalf("Expected 1 row, got %d", len(rows))
+	}
+	// name が "Bob" に更新されているか確認
+	values := rows[0].GetValues()
+	if name, ok := values[1].(storage.StringValue); !ok || string(name) != "Bob" {
+		t.Errorf("Expected name to be 'Bob', got %v", values[1])
 	}
 }
 
-func TestExecuteDeleteNotImplemented(t *testing.T) {
+func TestExecuteDelete(t *testing.T) {
 	cat, exec, wal := setupTestEnvironment(t)
 	defer wal.Close()
 	defer cat.Close()
 
-	deleteNode := &planner.DeleteNode{
-		TableName: "users",
+	// 1. テーブルを作成
+	columns := []storage.Column{
+		*storage.NewColumn("id", storage.ColumnTypeInt32, 0, false),
+		*storage.NewColumn("name", storage.ColumnTypeString, 255, false),
+	}
+	schema := storage.NewSchema("users", columns)
+	createNode := &planner.CreateTableNode{
+		TableName:   "users",
+		TableSchema: schema,
+	}
+	_, err := exec.Execute(createNode)
+	if err != nil {
+		t.Fatalf("Failed to create table: %v", err)
 	}
 
+	// 2. 行を挿入
+	insertNode := &planner.InsertNode{
+		TableName: "users",
+		Columns:   []string{"id", "name"},
+		Values: []planner.Expression{
+			&planner.Literal{Value: 1},
+			&planner.Literal{Value: "Alice"},
+		},
+	}
+	_, err = exec.Execute(insertNode)
+	if err != nil {
+		t.Fatalf("Failed to insert: %v", err)
+	}
+
+	// 挿入確認
+	table, _ := cat.GetTable("users")
+	rows, _ := table.Scan()
+	if len(rows) != 1 {
+		t.Fatalf("Expected 1 row after insert, got %d", len(rows))
+	}
+
+	// 3. DELETE を実行
+	deleteNode := &planner.DeleteNode{
+		TableName: "users",
+		Child: &planner.ScanNode{
+			TableName:   "users",
+			TableSchema: schema,
+		},
+	}
 	result, err := exec.Execute(deleteNode)
 	if err != nil {
-		t.Fatalf("Execute should not return error for unimplemented: %v", err)
+		t.Fatalf("Execute failed: %v", err)
 	}
 
 	if result == nil {
 		t.Fatal("Result should not be nil")
+	}
+
+	// 4. 削除されたか確認
+	rows, _ = table.Scan()
+	if len(rows) != 0 {
+		t.Errorf("Expected 0 rows after delete, got %d", len(rows))
 	}
 }
 
