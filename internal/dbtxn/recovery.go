@@ -106,9 +106,32 @@ func (rm *RecoveryManager) redo(txnMap map[uint64]*TxnStatus) error {
 					return err
 				}
 			case LogUpdate:
-				// TODO: UPDATE 操作の実装後に追加
+				// After データで行を更新
+				table, err := rm.catalog.GetTable(record.TableName)
+				if err != nil {
+					return err
+				}
+				schema, err := rm.catalog.GetSchema(record.TableName)
+				if err != nil {
+					return err
+				}
+				row, err := storage.DecodeRow(record.After, schema)
+				if err != nil {
+					return err
+				}
+				_, err = table.Update(row.GetRowID(), row)
+				if err != nil {
+					return err
+				}
 			case LogDelete:
-				// TODO: DELETE 操作の実装後に追加
+				// After データで行を削除
+				table, err := rm.catalog.GetTable(record.TableName)
+				if err != nil {
+					return err
+				}
+				if _, err = table.Delete(int64(record.RowID)); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -121,19 +144,65 @@ func (rm *RecoveryManager) undo(txnMap map[uint64]*TxnStatus) error {
 		if status.State != TxnStateActive {
 			continue
 		}
-		// 逆順に処理
-		for i := len(status.Records) - 1; i >= 0; i-- {
-			record := status.Records[i]
-			switch record.LogType {
-			case LogInsert:
-				// TODO: データベースに対して DELETE 操作を行う
-				rm.wal.LogDelete(record.TxnID, record.TableName, record.RowID, record.After)
-			case LogUpdate:
-				// TODO: データベースに対して UPDATE 操作を行う
-				rm.wal.LogUpdate(record.TxnID, record.TableName, record.RowID, record.After, record.Before)
-			case LogDelete:
-				// TODO: データベースに対して INSERT 操作を行う
-				rm.wal.LogInsert(record.TxnID, record.TableName, record.RowID, record.Before, record.After)
+		if rm.catalog != nil {
+			// 逆順に処理
+			for i := len(status.Records) - 1; i >= 0; i-- {
+				record := status.Records[i]
+				switch record.LogType {
+				case LogInsert:
+					// INSERT の取り消し → DELETE
+					table, err := rm.catalog.GetTable(record.TableName)
+					if err != nil {
+						return err
+					}
+					schema, err := rm.catalog.GetSchema(record.TableName)
+					if err != nil {
+						return err
+					}
+					row, err := storage.DecodeRow(record.After, schema)
+					if err != nil {
+						return err
+					}
+					_, err = table.Delete(row.GetRowID())
+					if err != nil {
+						return err
+					}
+				case LogUpdate:
+					// UPDATE の取り消し → Before データで行を更新
+					table, err := rm.catalog.GetTable(record.TableName)
+					if err != nil {
+						return err
+					}
+					schema, err := rm.catalog.GetSchema(record.TableName)
+					if err != nil {
+						return err
+					}
+					row, err := storage.DecodeRow(record.Before, schema)
+					if err != nil {
+						return err
+					}
+					_, err = table.Update(row.GetRowID(), row)
+					if err != nil {
+						return err
+					}
+				case LogDelete:
+					// DELETE の取り消し → Before データで行を挿入
+					table, err := rm.catalog.GetTable(record.TableName)
+					if err != nil {
+						return err
+					}
+					schema, err := rm.catalog.GetSchema(record.TableName)
+					if err != nil {
+						return err
+					}
+					row, err := storage.DecodeRow(record.Before, schema)
+					if err != nil {
+						return err
+					}
+					if err = table.Insert(row); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		// Rollback したログを追記

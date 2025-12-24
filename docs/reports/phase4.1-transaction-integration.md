@@ -46,6 +46,7 @@ func (e *executor) executeInsert(plan *planner.InsertPlan) (ResultSet, error) {
 Session に TxnManager を追加し、BEGIN / COMMIT / ROLLBACK コマンドを処理できるようにしました。
 
 **変更ファイル:**
+
 - `internal/parser/token.go` - トランザクショントークン追加
 - `internal/parser/ast.go` - トランザクション AST 追加
 - `internal/parser/parser.go` - トランザクション文のパース
@@ -84,6 +85,7 @@ func (s *session) Execute(sqlQuery string) (executor.ResultSet, error) {
 Recovery 処理で WAL へ再度ログを書き込んでいた不要なコードを削除しました。
 
 **変更前（誤り）:**
+
 ```go
 case LogInsert:
     table.Insert(row)
@@ -91,6 +93,7 @@ case LogInsert:
 ```
 
 **変更後（正しい）:**
+
 ```go
 case LogInsert:
     table.Insert(row)
@@ -184,6 +187,7 @@ func NewSession(...) Session {
 TiDB/CockroachDB のような分散 DB を参考に、論理キー（RowID）方式を採用しました。
 
 **変更ファイル:**
+
 - `internal/storage/row.go` - Row に RowID フィールド追加
 - `internal/storage/table.go` - Table に rowIndex マップ、Update/Delete メソッド追加
 
@@ -355,7 +359,71 @@ func (e *executor) executeDelete(node *planner.DeleteNode) (ResultSet, error) {
 |--------|------|
 | TestExecuteDelete | INSERT → DELETE → 行数確認 |
 
-## 残作業
+### Step 7: Recovery REDO/UNDO の UPDATE/DELETE 対応
+
+Recovery 処理で UPDATE/DELETE の REDO/UNDO を実装しました。
+
+**変更ファイル:** `internal/dbtxn/recovery.go`
+
+#### REDO 処理
+
+コミット済みトランザクションの操作を再適用：
+
+```go
+case LogUpdate:
+    // After データで行を更新
+    table, _ := rm.catalog.GetTable(record.TableName)
+    schema, _ := rm.catalog.GetSchema(record.TableName)
+    row, _ := storage.DecodeRow(record.After, schema)
+    table.Update(row.GetRowID(), row)
+
+case LogDelete:
+    // RowID で行を削除
+    table, _ := rm.catalog.GetTable(record.TableName)
+    table.Delete(int64(record.RowID))
+```
+
+#### UNDO 処理
+
+未コミットトランザクションの操作を取り消し：
+
+```go
+case LogInsert:
+    // INSERT の取り消し → DELETE
+    table.Delete(row.GetRowID())
+
+case LogUpdate:
+    // UPDATE の取り消し → Before データで復元
+    row, _ := storage.DecodeRow(record.Before, schema)
+    table.Update(row.GetRowID(), row)
+
+case LogDelete:
+    // DELETE の取り消し → Before データで再挿入
+    row, _ := storage.DecodeRow(record.Before, schema)
+    table.Insert(row)
+```
+
+#### catalog nil 対応
+
+テスト容易性のため、catalog が nil の場合は実際のテーブル操作をスキップ：
+
+```go
+func (rm *RecoveryManager) undo(txnMap map[uint64]*TxnStatus) error {
+    for _, status := range txnMap {
+        if status.State != TxnStateActive {
+            continue
+        }
+        if rm.catalog != nil {
+            // 実際の UNDO 操作
+        }
+        // Rollback ログは常に追記
+        rm.wal.LogRollback(status.ID)
+    }
+    return rm.wal.Flush()
+}
+```
+
+## Phase 4.1 完了
 
 | 項目 | 状態 |
 |------|------|
@@ -363,7 +431,7 @@ func (e *executor) executeDelete(node *planner.DeleteNode) (ResultSet, error) {
 | Executor の executeDelete 実装 | ✓ 完了 |
 | UPDATE の WAL 統合 | ✓ 完了 |
 | DELETE の WAL 統合 | ✓ 完了 |
-| Recovery REDO/UNDO の UPDATE/DELETE 対応 | 未実装 |
+| Recovery REDO/UNDO の UPDATE/DELETE 対応 | ✓ 完了 |
 
 ## 学んだこと
 
