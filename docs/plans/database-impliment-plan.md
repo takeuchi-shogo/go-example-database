@@ -7,7 +7,7 @@
 | Phase 1: ストレージエンジン | ✅ 完了 | |
 | Phase 2: インデックス | ✅ 完了 | Delete は未実装 |
 | Phase 3: SQLパーサー & REPL | ✅ 完了 | |
-| Phase 4: トランザクション | ⚠ 部分完了 | 実際の DB 操作との統合が未完了 |
+| Phase 4: トランザクション | ✅ 完了 | WAL/Recovery 統合完了 |
 | Phase 5: クエリ最適化 & 高度な機能 | ✅ 完了 | |
 | Phase 6: レプリケーション | 🔜 次のフェーズ | |
 
@@ -64,7 +64,7 @@
 
 ---
 
-## Phase 4: トランザクション ⚠ 部分完了
+## Phase 4: トランザクション ✅ 完了
 
 - [x] wal.go - Write-Ahead Log
   - [x] ログレコード構造（LSN, TxnID, LogType, Before/After）
@@ -73,17 +73,13 @@
   - [x] チェックポイント（Checkpoint）
 - [x] transaction.go - トランザクション管理
   - [x] BEGIN / COMMIT / ROLLBACK
-  - [ ] 実際のテーブル操作との統合
+  - [x] 実際のテーブル操作との統合
 - [x] recovery.go - クラッシュリカバリ
-  - [x] REDO処理（基本構造）
-  - [x] UNDO処理（基本構造）
-  - [ ] 実際のテーブル操作との統合
+  - [x] REDO処理（INSERT/UPDATE/DELETE）
+  - [x] UNDO処理（INSERT/UPDATE/DELETE）
+  - [x] 実際のテーブル操作との統合
 
-**残タスク**:
-
-- [ ] WAL とテーブル操作の統合（INSERT/UPDATE/DELETE 時に WAL 記録）
-- [ ] リカバリ時の実際のデータ復元
-- [ ] ACID 保証のテスト
+**達成**: INSERT/UPDATE/DELETE が WAL に記録され、クラッシュリカバリが動く
 
 ---
 
