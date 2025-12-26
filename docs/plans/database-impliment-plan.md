@@ -9,7 +9,9 @@
 | Phase 3: SQLパーサー & REPL | ✅ 完了 | |
 | Phase 4: トランザクション | ✅ 完了 | WAL/Recovery 統合完了 |
 | Phase 5: クエリ最適化 & 高度な機能 | ✅ 完了 | |
-| Phase 6: レプリケーション | 🔜 次のフェーズ | |
+| Phase 6: レプリケーション | ✅ 完了 | Raft 基本実装完了 |
+| Phase 7: 分散トランザクション | ✅ 完了 | HLC/MVCC/2PC 実装完了 |
+| Phase 8: シャーディング | 🔜 次のフェーズ | |
 
 ---
 
@@ -112,34 +114,50 @@
 
 ---
 
-## Phase 6: レプリケーション（複製）👈 次のフェーズ
+## Phase 6: レプリケーション（複製）✅ 完了
 
-- [ ] raft/raft.go - Raftコンセンサスアルゴリズム
-  - [ ] リーダー選挙（Leader Election）
-  - [ ] ログ複製（Log Replication）
-  - [ ] ハートビート
-- [ ] raft/log.go - Raftログ管理
-- [ ] raft/state.go - ノード状態（Leader/Follower/Candidate）
-- [ ] replication/manager.go - レプリケーション管理
-  - [ ] 同期レプリケーション
-  - [ ] リーダーフェイルオーバー
+- [x] raft/state.go - ノード状態（Leader/Follower/Candidate）
+- [x] raft/log.go - Raftログ管理
+- [x] raft/election.go - リーダー選挙（RequestVote RPC）
+- [x] raft/replication.go - ログ複製（AppendEntries RPC）
+- [x] raft/heartbeat.go - ハートビート
+- [x] replication/manager.go - レプリケーション管理
+  - [x] タイマー管理（選挙タイムアウト、ハートビート間隔）
+  - [x] Transport インターフェース定義
 
-**ゴール**: 3ノードクラスタで1台落ちてもデータが失われない
+**達成**: Raft コンセンサスアルゴリズムの基本コンポーネント実装完了
+
+**残タスク（将来）**:
+
+- [ ] Transport 実装（gRPC/HTTP でノード間通信）
+- [ ] 永続化（currentTerm, votedFor, log を WAL に保存）
+- [ ] スナップショット
+- [ ] 統合テスト（3ノードクラスタ）
 
 ---
 
-## Phase 7: 分散トランザクション
+## Phase 7: 分散トランザクション ✅ 完了
 
-- [ ] distributed/coordinator.go - トランザクションコーディネーター
-- [ ] distributed/two_phase_commit.go - 2相コミット（2PC）
-  - [ ] Prepare フェーズ
-  - [ ] Commit フェーズ
-  - [ ] Abort 処理
-- [ ] distributed/timestamp.go - 分散タイムスタンプ
-  - [ ] Hybrid Logical Clock（HLC）
-  - [ ] MVCC（Multi-Version Concurrency Control）
+- [x] distributed/hlc.go - Hybrid Logical Clock
+  - [x] Timestamp 構造体
+  - [x] Now() - タイムスタンプ取得
+  - [x] Update() - ノード間同期
+  - [x] Compare() - 比較
+- [x] distributed/mvcc.go - Multi-Version Concurrency Control
+  - [x] Version / Version Chain
+  - [x] Put() - 新バージョン追加
+  - [x] Get() - スナップショット読み取り
+  - [x] Delete() - Tombstone
+- [x] distributed/two_phase_commit.go - 2相コミット（2PC）
+  - [x] Coordinator - コーディネーター
+  - [x] Participant - 参加者インターフェース
+  - [x] Prepare / Commit / Abort
+- [x] distributed/integration_test.go - 統合テスト
+  - [x] 送金シナリオ
+  - [x] スナップショット分離
+  - [x] 並行トランザクション
 
-**ゴール**: 複数ノードにまたがるトランザクションがACID保証される
+**達成**: 複数ノードにまたがるトランザクションがACID保証される
 
 ---
 
@@ -268,7 +286,14 @@ minidb/
 │   │   └── catalog.go
 │   ├── session/          # Phase 3 ✅
 │   │   └── session.go
-│   ├── raft/             # Phase 6 (未実装)
+│   ├── raft/             # Phase 6 ✅
+│   │   ├── state.go
+│   │   ├── log.go
+│   │   ├── election.go
+│   │   ├── replication.go
+│   │   └── heartbeat.go
+│   ├── replication/       # Phase 6 ✅
+│   │   └── manager.go
 │   ├── sharding/         # Phase 8 (未実装)
 │   ├── distributed/      # Phase 7, 9 (未実装)
 │   ├── cluster/          # Phase 10 (未実装)
@@ -313,21 +338,22 @@ minidb/
 | Phase | 達成すると... | 状態 |
 |-------|-------------|------|
 | 1-3   | 自作DBでSQLが動く！ | ✅ 達成 |
-| 4-5   | 本格的なRDBMSになる！ | ⚠ ほぼ達成 |
-| 6-7   | 落ちても復旧できる分散DB！ | 🔜 次 |
-| 8-10  | TiDB/CockroachDB級の分散DB！ | 📋 予定 |
+| 4-5   | 本格的なRDBMSになる！ | ✅ 達成 |
+| 6     | Raft コンセンサス基盤！ | ✅ 達成 |
+| 7     | 分散トランザクション！ | ✅ 達成 |
+| 8-10  | TiDB/CockroachDB級の分散DB！ | 🔜 次 |
 
 ---
 
 ## 次のアクション
 
-### オプション A: Phase 6 に進む（レプリケーション）
+### オプション A: Phase 8 に進む（シャーディング）
 
-分散システムの基盤となる Raft コンセンサスアルゴリズムを実装する。
+レンジベースシャーディングを実装し、1TB超のデータを複数ノードに分散格納する。
 
-### オプション B: Phase 4 を完成させる（トランザクション統合）
+### オプション B: Phase 6 の残タスク（Transport 実装）
 
-WAL とテーブル操作を統合し、ACID 保証を完成させる。
+gRPC で実際のノード間通信を実装し、3ノードクラスタで動作確認する。
 
 ### オプション C: Phase 2 の残りを実装（B+Tree Delete）
 
