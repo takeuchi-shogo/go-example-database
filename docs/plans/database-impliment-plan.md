@@ -11,7 +11,8 @@
 | Phase 5: クエリ最適化 & 高度な機能 | ✅ 完了 | |
 | Phase 6: レプリケーション | ✅ 完了 | Raft 基本実装完了 |
 | Phase 7: 分散トランザクション | ✅ 完了 | HLC/MVCC/2PC 実装完了 |
-| Phase 8: シャーディング | 🔜 次のフェーズ | |
+| Phase 8: シャーディング | ✅ 完了 | Range/Router/Rebalancer 実装完了 |
+| Phase 9: 分散クエリ実行 | 🔜 次のフェーズ | |
 
 ---
 
@@ -161,20 +162,31 @@
 
 ---
 
-## Phase 8: シャーディング（データ分割）
+## Phase 8: シャーディング（データ分割）✅ 完了
 
-- [ ] sharding/range.go - レンジベースシャーディング
-  - [ ] キー範囲でデータ分割
-  - [ ] レンジ分割（Split）
-  - [ ] レンジマージ（Merge）
-- [ ] sharding/router.go - クエリルーティング
-  - [ ] どのノードにデータがあるか判定
-  - [ ] マルチノードクエリ
-- [ ] sharding/rebalance.go - データ再配置
-  - [ ] ノード追加時のリバランス
-  - [ ] ホットスポット対策
+- [x] sharding/range.go - レンジベースシャーディング
+  - [x] Range 構造体（キー範囲）
+  - [x] RangeManager（Range の管理）
+  - [x] FindRange（二分探索）
+  - [x] SplitRange（レンジ分割）
+  - [x] MergeRanges（レンジ統合）
+- [x] sharding/router.go - クエリルーティング
+  - [x] GetNodeIDByRangeKey（単一キールーティング）
+  - [x] RouteRange（範囲クエリルーティング）
+  - [x] overlaps（範囲重なり判定）
+- [x] sharding/rebalancer.go - データ再配置
+  - [x] GetNodeRangeCounts（ノード別 Range 数）
+  - [x] SuggestRebalance（リバランス提案）
+  - [x] ExecuteRebalance（リバランス実行）
+- [x] sharding/integration_test.go - 統合テスト
 
-**ゴール**: 1TB超のデータを複数ノードに分散して格納
+**達成**: レンジベースシャーディングの基盤が動く
+
+**残タスク（将来）**:
+
+- [ ] 実データの移動（Transport 層が必要）
+- [ ] ホットスポット検出（アクセス頻度ベース）
+- [ ] 自動リバランス
 
 ---
 
@@ -341,20 +353,25 @@ minidb/
 | 4-5   | 本格的なRDBMSになる！ | ✅ 達成 |
 | 6     | Raft コンセンサス基盤！ | ✅ 達成 |
 | 7     | 分散トランザクション！ | ✅ 達成 |
-| 8-10  | TiDB/CockroachDB級の分散DB！ | 🔜 次 |
+| 8     | シャーディング基盤！ | ✅ 達成 |
+| 9-10  | TiDB/CockroachDB級の分散DB！ | 🔜 次 |
 
 ---
 
 ## 次のアクション
 
-### オプション A: Phase 8 に進む（シャーディング）
+### オプション A: Phase 9 に進む（分散クエリ実行）
 
-レンジベースシャーディングを実装し、1TB超のデータを複数ノードに分散格納する。
+複数シャードにまたがるクエリの並列実行を実装する。
 
-### オプション B: Phase 6 の残タスク（Transport 実装）
+### オプション B: Transport 実装（Phase 6 残タスク）
 
 gRPC で実際のノード間通信を実装し、3ノードクラスタで動作確認する。
 
-### オプション C: Phase 2 の残りを実装（B+Tree Delete）
+### オプション C: SQL レイヤーとの統合
+
+Phase 7-8 の分散機能を SQL レイヤー（Session/Executor）と統合する。
+
+### オプション D: Phase 2 の残りを実装（B+Tree Delete）
 
 B+Tree の Delete 操作を実装して、インデックス機能を完成させる。
